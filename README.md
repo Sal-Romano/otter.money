@@ -5,6 +5,7 @@ A personal finance management system that helps track accounts, transactions, an
 ## Current Status
 
 Early development phase with basic frontend infrastructure in place:
+- Account Authorization wit Supabase
 - Dashboard view with account summary and recent transactions
 - Account listing page (in progress)
 - Transaction history view (in progress)
@@ -24,6 +25,7 @@ Early development phase with basic frontend infrastructure in place:
 - PostgreSQL
 - SQLAlchemy ORM
 - SimpleFIN bridge for financial institution connections
+- Supabase for Auth
 
 ## Development Setup
 

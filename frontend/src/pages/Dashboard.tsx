@@ -1,4 +1,4 @@
-import { Box, Grid, Heading, Text } from '@chakra-ui/react'
+import { Box, Grid, Heading, Text, VStack, useColorModeValue } from '@chakra-ui/react'
 import { useQuery } from '@tanstack/react-query'
 import axios from 'axios'
 
@@ -11,7 +11,7 @@ const Dashboard = () => {
     }
   })
 
-  const { data: transactions, isLoading: transactionsLoading } = useQuery({
+  const { data: transactions } = useQuery({
     queryKey: ['transactions'],
     queryFn: async () => {
       const response = await axios.get('/api/v1/transactions')
@@ -20,48 +20,49 @@ const Dashboard = () => {
   })
 
   const totalBalance = accounts?.reduce((sum: number, account: any) => sum + account.balance, 0) || 0
+  const cardBg = useColorModeValue('white', 'gray.700')
+  const subtleText = useColorModeValue('gray.600', 'gray.400')
 
   return (
-    <Box>
-      <Heading mb={8}>Dashboard</Heading>
-      
-      <Grid templateColumns="repeat(3, 1fr)" gap={6} mb={8}>
-        <Box p={5} bg="white" borderRadius="lg" boxShadow="sm">
-          <Text fontSize="sm" color="gray.600">Total Balance</Text>
-          <Text fontSize="2xl" fontWeight="bold">${totalBalance.toFixed(2)}</Text>
-          <Text fontSize="xs" color="gray.500">Across all accounts</Text>
+    <Box w="100%">
+      <VStack align="stretch" spacing={8}>
+        <Box>
+          <Heading size="lg">Dashboard</Heading>
+          <Text color={subtleText}>Your financial overview</Text>
         </Box>
-        
-        <Box p={5} bg="white" borderRadius="lg" boxShadow="sm">
-          <Text fontSize="sm" color="gray.600">Number of Accounts</Text>
-          <Text fontSize="2xl" fontWeight="bold">{accounts?.length || 0}</Text>
-          <Text fontSize="xs" color="gray.500">Active accounts</Text>
-        </Box>
-        
-        <Box p={5} bg="white" borderRadius="lg" boxShadow="sm">
-          <Text fontSize="sm" color="gray.600">Recent Transactions</Text>
-          <Text fontSize="2xl" fontWeight="bold">{transactions?.length || 0}</Text>
-          <Text fontSize="xs" color="gray.500">Last 30 days</Text>
-        </Box>
-      </Grid>
 
-      <Box bg="white" p={6} borderRadius="lg" boxShadow="sm">
-        <Heading size="md" mb={4}>Recent Activity</Heading>
-        {transactionsLoading ? (
-          <Text>Loading transactions...</Text>
-        ) : (
-          <Box>
-            {transactions?.slice(0, 5).map((transaction: any) => (
-              <Box key={transaction.id} py={2} borderBottom="1px" borderColor="gray.100">
-                <Text>{transaction.description}</Text>
-                <Text color={transaction.amount >= 0 ? 'green.500' : 'red.500'}>
-                  ${Math.abs(transaction.amount).toFixed(2)}
-                </Text>
-              </Box>
-            ))}
+        <Grid 
+          templateColumns={{ 
+            base: "1fr",
+            md: "repeat(2, 1fr)", 
+            lg: "repeat(3, 1fr)" 
+          }}
+          gap={6}
+        >
+          <Box bg={cardBg} p={6} rounded="lg" shadow="sm">
+            <Text color={subtleText} mb={2}>Total Balance</Text>
+            <Heading size="lg">${totalBalance.toFixed(2)}</Heading>
+            <Text color={subtleText} fontSize="sm" mt={1}>Across all accounts</Text>
           </Box>
-        )}
-      </Box>
+
+          <Box bg={cardBg} p={6} rounded="lg" shadow="sm">
+            <Text color={subtleText} mb={2}>Number of Accounts</Text>
+            <Heading size="lg">{accounts?.length || 0}</Heading>
+            <Text color={subtleText} fontSize="sm" mt={1}>Active accounts</Text>
+          </Box>
+
+          <Box bg={cardBg} p={6} rounded="lg" shadow="sm">
+            <Text color={subtleText} mb={2}>Recent Transactions</Text>
+            <Heading size="lg">{transactions?.length || 0}</Heading>
+            <Text color={subtleText} fontSize="sm" mt={1}>Last 30 days</Text>
+          </Box>
+        </Grid>
+
+        <Box bg={cardBg} p={6} rounded="lg" shadow="sm">
+          <Heading size="md" mb={4}>Recent Activity</Heading>
+          <Text color={subtleText}>No recent activity to display</Text>
+        </Box>
+      </VStack>
     </Box>
   )
 }

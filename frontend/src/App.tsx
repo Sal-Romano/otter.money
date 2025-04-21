@@ -1,35 +1,76 @@
-import { ChakraProvider, Box } from '@chakra-ui/react'
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import theme from './theme'
-
-// Layouts
+import { ChakraProvider, ColorModeScript } from '@chakra-ui/react'
+import { AuthProvider } from './contexts/AuthContext'
+import { ColorModeProvider } from './contexts/ColorModeContext'
+import ProtectedRoute from './components/ProtectedRoute'
 import MainLayout from './layouts/MainLayout'
-
-// Pages
 import Dashboard from './pages/Dashboard'
+import Settings from './pages/Settings'
 import Accounts from './pages/Accounts'
 import Transactions from './pages/Transactions'
+import Login from './pages/Login'
+import theme from './theme'
 
 const queryClient = new QueryClient()
 
-function App() {
+const App = () => {
   return (
-    <QueryClientProvider client={queryClient}>
-      <ChakraProvider theme={theme}>
-        <Router>
-          <Box minH="100vh" bg="gray.50">
-            <MainLayout>
+    <ChakraProvider theme={theme}>
+      <ColorModeScript initialColorMode={theme.config.initialColorMode} />
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <ColorModeProvider>
+            <Router>
               <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/accounts" element={<Accounts />} />
-                <Route path="/transactions" element={<Transactions />} />
+                <Route path="/login" element={<Login />} />
+                <Route
+                  path="/"
+                  element={
+                    <ProtectedRoute>
+                      <MainLayout>
+                        <Dashboard />
+                      </MainLayout>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/accounts"
+                  element={
+                    <ProtectedRoute>
+                      <MainLayout>
+                        <Accounts />
+                      </MainLayout>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/transactions"
+                  element={
+                    <ProtectedRoute>
+                      <MainLayout>
+                        <Transactions />
+                      </MainLayout>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/settings"
+                  element={
+                    <ProtectedRoute>
+                      <MainLayout>
+                        <Settings />
+                      </MainLayout>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="*" element={<Navigate to="/" />} />
               </Routes>
-            </MainLayout>
-          </Box>
-        </Router>
-      </ChakraProvider>
-    </QueryClientProvider>
+            </Router>
+          </ColorModeProvider>
+        </AuthProvider>
+      </QueryClientProvider>
+    </ChakraProvider>
   )
 }
 
