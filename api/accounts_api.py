@@ -87,23 +87,27 @@ def get_accounts(
         logging.exception(f"Exception fetching SimpleFIN data for user_id={user_id}")
         raise HTTPException(status_code=500, detail=str(e))
 
-def upsert_user_accounts(user_id: str, accounts: List[dict]):
+def upsert_user_accounts(user_id: str, accounts: List[dict], source: str = "simplefin-bridge"):
     # Prepare data for upsert
     upsert_data = []
     for acc in accounts:
         upsert_data.append({
             "user_id": user_id,
-            "sf_account_id": acc.get("id"),
-            "sf_account_name": acc.get("name"),
-            "sf_name": acc.get("org", {}).get("name"),
-            "sf_balance": acc.get("balance"),
-            "sf_balance_date": acc.get("balance-date"),
+            "sf_account_id": acc.get("id") or acc.get("sf_account_id"),
+            "sf_account_name": acc.get("name") or acc.get("sf_account_name"),
+            "sf_name": acc.get("org", {}).get("name") if acc.get("org") else acc.get("sf_name"),
+            "balance": acc.get("balance") or acc.get("sf_balance") or acc.get("balance"),
+            "sf_balance_date": acc.get("balance-date") or acc.get("sf_balance_date"),
+            "source": source
         })
     # Upsert into user_accounts
-    resp = supabase.table("user_accounts").upsert(upsert_data, on_conflict="user_id,sf_account_id").execute()
-    if resp.error:
-        logging.error(f"Error upserting user_accounts: {resp.error}")
-    return resp
+    try:
+        resp = supabase.table("user_accounts").upsert(upsert_data, on_conflict="user_id,sf_account_id").execute()
+        logging.info(f"Successfully upserted accounts for user_id={user_id}")
+        return resp
+    except Exception as e:
+        logging.error(f"Error upserting user_accounts: {str(e)}")
+        raise e
 
 @app.get("/api/v1/user_accounts")
 def get_user_accounts(
@@ -127,8 +131,8 @@ def get_user_accounts(
     else:
         raise HTTPException(status_code=401, detail="Missing or invalid API key or JWT")
 
-    # Try to get cached accounts
-    resp = supabase.table("user_accounts").select("sf_account_id, sf_account_name, sf_name, sf_balance, sf_balance_date").eq("user_id", user_id).execute()
+    # Always return all accounts from user_accounts
+    resp = supabase.table("user_accounts").select("sf_account_id, sf_account_name, sf_name, balance, sf_balance_date, source").eq("user_id", user_id).execute()
     if resp.data and len(resp.data) > 0:
         return {"accounts": resp.data}
 
@@ -144,9 +148,32 @@ def get_user_accounts(
         if resp_sf.status_code != 200:
             return JSONResponse(status_code=resp_sf.status_code, content={"error": resp_sf.text})
         accounts = resp_sf.json().get("accounts", [])
-        upsert_user_accounts(user_id, accounts)
+        upsert_user_accounts(user_id, accounts, source="simplefin-bridge")
         # Return the upserted data
-        resp = supabase.table("user_accounts").select("sf_account_id, sf_account_name, sf_name, sf_balance, sf_balance_date").eq("user_id", user_id).execute()
+        resp = supabase.table("user_accounts").select("sf_account_id, sf_account_name, sf_name, balance, sf_balance_date, source").eq("user_id", user_id).execute()
         return {"accounts": resp.data}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/user_accounts")
+def add_manual_account(
+    account: dict,
+    user_id: str = Query(...),
+    secret: str = Header(None),
+    authorization: str = Header(None)
+):
+    # Auth logic (reuse from get_accounts)
+    if secret == API_KEY:
+        if not user_id:
+            raise HTTPException(status_code=400, detail="user_id is required with API key")
+    elif authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ", 1)[1]
+        user_id_from_jwt = verify_jwt(token)
+        if not user_id_from_jwt:
+            raise HTTPException(status_code=401, detail="Invalid JWT token")
+        user_id = user_id_from_jwt
+    else:
+        raise HTTPException(status_code=401, detail="Missing or invalid API key or JWT")
+    # Upsert manual account
+    upsert_user_accounts(user_id, [account], source="manual")
+    return {"status": "success"} 

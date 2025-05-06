@@ -44,3 +44,7 @@ yarn-error.log*
 # Database
 *.sqlite3
 *.db
+
+#assets
+*.png
+*.ico
