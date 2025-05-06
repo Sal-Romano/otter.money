@@ -2,38 +2,25 @@ import { Box, Grid, Heading, Text, VStack, useColorModeValue, Button, Spinner, A
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { useAuth } from '../contexts/AuthContext'
-import { supabase } from '../lib/supabase'
 import { useState } from 'react'
 
-// Type for account object
+// Type for account object from user_accounts table
 interface Account {
+  sf_account_id: string;
+  sf_account_name: string;
+  sf_name: string;
   balance: string;
-  [key: string]: any;
+  sf_balance_date: string;
+  source: string;
 }
 
-const fetchCachedAccounts = async (userId: string): Promise<Account[] | null> => {
-  const { data, error } = await supabase
-    .from('user_account_cache')
-    .select('accounts')
-    .eq('user_id', userId)
-    .single();
-  if (error) return null;
-  return data?.accounts || null;
-};
-
-const saveCachedAccounts = async (userId: string, accounts: Account[]) => {
-  await supabase
-    .from('user_account_cache')
-    .upsert({ user_id: userId, accounts });
-};
-
-const fetchAccountsFromApi = async (userId: string, jwt: string): Promise<Account[]> => {
-  const response = await axios.get(`/api/v1/accounts?user_id=${userId}`, {
+const fetchUserAccounts = async (jwt: string): Promise<Account[]> => {
+  const response = await axios.get('/api/v1/user_accounts', {
     headers: {
       Authorization: `Bearer ${jwt}`
     }
   });
-  return response.data.accounts;
+  return response.data.accounts || [];
 };
 
 const Dashboard = () => {
@@ -43,10 +30,10 @@ const Dashboard = () => {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
 
-  const { data: cachedAccounts, isLoading: loadingCache } = useQuery<Account[] | null>({
-    queryKey: ['cachedAccounts', userId],
-    queryFn: () => userId ? fetchCachedAccounts(userId) : null,
-    enabled: !!userId,
+  const { data: accounts, isLoading } = useQuery<Account[]>({
+    queryKey: ['userAccounts', userId],
+    queryFn: () => jwt ? fetchUserAccounts(jwt) : Promise.resolve([]),
+    enabled: !!userId && !!jwt,
   });
 
   const { mutate: refreshAccounts, isPending: refreshing } = useMutation({
@@ -57,23 +44,31 @@ const Dashboard = () => {
         return;
       }
       try {
-        const accounts = await fetchAccountsFromApi(userId, jwt);
-        await saveCachedAccounts(userId, accounts);
-        queryClient.invalidateQueries({ queryKey: ['cachedAccounts', userId] });
+        // Fetch fresh data from API
+        await axios.get('/api/v1/accounts', {
+          headers: {
+            Authorization: `Bearer ${jwt}`
+          }
+        });
+        // Invalidate query to refresh the UI
+        queryClient.invalidateQueries({ queryKey: ['userAccounts', userId] });
       } catch (err: any) {
         setError(err?.response?.data?.error || err.message || 'Failed to refresh accounts.');
       }
     }
   });
 
-  const netWorth = cachedAccounts
-    ? cachedAccounts.reduce((sum: number, account: Account) => sum + parseFloat(account.balance || '0'), 0)
+  const netWorth = accounts
+    ? accounts.reduce((sum: number, account: Account) => {
+        const balance = parseFloat(account.balance || '0');
+        return sum + balance;
+      }, 0)
     : 0;
 
   const cardBg = useColorModeValue('white', 'gray.700');
   const subtleText = useColorModeValue('gray.600', 'gray.400');
 
-  if (loadingCache) {
+  if (isLoading) {
     return <Spinner />;
   }
 
@@ -108,7 +103,7 @@ const Dashboard = () => {
           </Box>
           <Box bg={cardBg} p={6} rounded="lg" shadow="sm">
             <Text color={subtleText} mb={2}>Number of Accounts</Text>
-            <Heading size="lg">{cachedAccounts?.length || 0}</Heading>
+            <Heading size="lg">{accounts?.length || 0}</Heading>
             <Text color={subtleText} fontSize="sm" mt={1}>Active accounts</Text>
           </Box>
         </Grid>

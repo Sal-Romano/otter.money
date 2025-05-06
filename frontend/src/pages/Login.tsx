@@ -2,13 +2,14 @@ import { useState } from 'react'
 import { Box, Button, FormControl, FormLabel, Input, VStack, Text, useToast, Heading, useColorModeValue } from '@chakra-ui/react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import axios from 'axios'
 
 const Login = () => {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isSignUp, setIsSignUp] = useState(false)
   const [loading, setLoading] = useState(false)
-  const { signIn, signUp } = useAuth()
+  const { signIn, signUp, session } = useAuth()
   const navigate = useNavigate()
   const toast = useToast()
 
@@ -29,6 +30,21 @@ const Login = () => {
         })
       } else {
         await signIn(email, password)
+        
+        // Fetch accounts data from API after successful login
+        try {
+          if (session?.access_token) {
+            await axios.get('/api/v1/accounts', {
+              headers: {
+                Authorization: `Bearer ${session.access_token}`
+              }
+            })
+          }
+        } catch (apiError) {
+          console.error('Failed to fetch accounts:', apiError)
+          // Continue with navigation even if accounts fetch fails
+        }
+        
         navigate('/')
       }
     } catch (error) {
