@@ -35,7 +35,7 @@ def verify_jwt(token: str):
             algorithms=["HS256"],
             audience="authenticated"  # <-- add this line
         )
-        logging.info(f"Decoded JWT payload: {payload}")
+        #logging.info(f"Decoded JWT payload: {payload}")
         return payload.get("sub")  # sub is the user_id
     except JWTError as e:
         logging.warning(f"JWT verification failed: {str(e)}")
@@ -47,7 +47,7 @@ def get_accounts(
     secret: str = Header(None),
     authorization: str = Header(None)
 ):
-    logging.info(f"Authorization header: {authorization}")
+    # logging.info(f"Authorization header: {authorization}")
     # Prefer API key if present
     if secret == API_KEY:
         if not user_id:
@@ -116,7 +116,7 @@ def get_user_accounts(
     authorization: str = Header(None)
 ):
     # Auth logic (reuse from get_accounts)
-    logging.info(f"Authorization header: {authorization}")
+    # logging.info(f"Authorization header: {authorization}")
     if secret == API_KEY:
         if not user_id:
             raise HTTPException(status_code=400, detail="user_id is required with API key")
@@ -176,4 +176,32 @@ def add_manual_account(
         raise HTTPException(status_code=401, detail="Missing or invalid API key or JWT")
     # Upsert manual account
     upsert_user_accounts(user_id, [account], source="manual")
-    return {"status": "success"} 
+    return {"status": "success"}
+
+if __name__ == "__main__":
+    import sys
+    import threading
+    from watchdog.observers import Observer
+    from watchdog.events import PatternMatchingEventHandler
+    import uvicorn
+
+    def restart_on_change():
+        class RestartHandler(PatternMatchingEventHandler):
+            def __init__(self):
+                super().__init__(patterns=["*.py"], ignore_directories=False)
+            def on_modified(self, event):
+                print(f"File changed: {event.src_path}. Restarting...")
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+        event_handler = RestartHandler()
+        observer = Observer()
+        observer.schedule(event_handler, path=".", recursive=True)
+        observer.start()
+        try:
+            while True:
+                pass
+        except KeyboardInterrupt:
+            observer.stop()
+        observer.join()
+
+    threading.Thread(target=restart_on_change, daemon=True).start()
+    uvicorn.run("api:app", host="0.0.0.0", port=8000) 
