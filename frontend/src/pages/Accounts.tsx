@@ -48,7 +48,9 @@ import {
   MenuList,
   MenuItem,
   Portal,
-  Spacer
+  Spacer,
+  FormControl,
+  Tag
 } from '@chakra-ui/react'
 import { useEffect, useState, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext'
@@ -65,6 +67,7 @@ import {
   ArrowUpDownIcon,
   CloseIcon
 } from '@chakra-ui/icons'
+import { supabase } from '../lib/supabase'
 
 // Type for account object from user_accounts table
 interface Account {
@@ -74,7 +77,49 @@ interface Account {
   balance: string;
   sf_balance_date: string;
   source: string;
+  category?: string;
 }
+
+// Update types to match the new category structure
+interface Category {
+  name: string;
+  color: string;
+  subcategories?: Category[];
+}
+
+interface CategoryStructure {
+  account_categories: Category[];
+  transaction_categories: Category[];
+}
+
+// Change the getCategoryColor function to work with the new structure
+const getCategoryColor = (categoryName: string | undefined, categoryStructure: CategoryStructure): string => {
+  if (!categoryName) return 'red.500'; // Default for "Uncategorized"
+  
+  // Check in top-level account categories
+  const category = categoryStructure.account_categories.find(cat => cat.name === categoryName);
+  if (category) return category.color;
+  
+  // Check in subcategories
+  for (const parentCat of categoryStructure.account_categories) {
+    if (parentCat.subcategories) {
+      const subcat = parentCat.subcategories.find(sub => sub.name === categoryName);
+      if (subcat) return subcat.color;
+    }
+  }
+  
+  return 'red.500'; // Default fallback
+};
+
+// Currency formatter for consistent display
+const formatCurrency = (amount: number): string => {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(amount);
+};
 
 // Type for sorting
 type SortField = 'sf_account_name' | 'sf_name' | 'balance' | 'sf_balance_date' | 'source';
@@ -139,8 +184,85 @@ const Accounts = () => {
     direction: 'desc'
   })
 
+  // Add state for categories
+  const [categories, setCategories] = useState<CategoryStructure>({
+    account_categories: [],
+    transaction_categories: []
+  });
+  
+  // Fix the React Query linter error by removing the callback and using useEffect
+  const { data: userSettings } = useQuery({
+    queryKey: ['userSettings', user?.id],
+    queryFn: async () => {
+      if (!session?.access_token || !user) return null;
+      
+      const { data, error } = await supabase
+        .from('user_settings')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+        
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user && !!session?.access_token,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false
+  });
+
+  // Use useEffect to process the categories when userSettings changes
+  useEffect(() => {
+    if (userSettings?.categories) {
+      if (typeof userSettings.categories === 'object' && 
+          'account_categories' in userSettings.categories &&
+          'transaction_categories' in userSettings.categories) {
+        // New structure
+        setCategories(userSettings.categories as CategoryStructure);
+      } else if (Array.isArray(userSettings.categories)) {
+        // Legacy structure
+        setCategories({
+          account_categories: userSettings.categories as Category[],
+          transaction_categories: []
+        });
+      }
+    }
+  }, [userSettings]);
+
+  // Add a function to update the account category
+  const handleCategoryChange = async (accountId: string, categoryName: string | null) => {
+    if (!user || !session) return;
+    
+    try {
+      const { error } = await supabase
+        .from('user_accounts')
+        .update({ 
+          category: categoryName 
+        })
+        .eq('sf_account_id', accountId);
+        
+      if (error) throw error;
+      
+      // Refresh the accounts data
+      refetch();
+      
+      toast({
+        title: 'Category updated',
+        status: 'success',
+        duration: 3000,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Error updating category',
+        description: error.message,
+        status: 'error',
+        duration: 5000,
+      });
+    }
+  };
+
   // Use React Query for data fetching with caching
-  const { data: accounts = [], isLoading, error, refetch } = useQuery({
+  const { data: accounts = [], isLoading, error: queryError, refetch } = useQuery({
     queryKey: ['userAccounts', user?.id],
     queryFn: () => session?.access_token ? fetchUserAccounts(session.access_token) : Promise.resolve([]),
     enabled: !!user && !!session?.access_token,
@@ -339,6 +461,10 @@ const Accounts = () => {
       ? new Date(parseInt(selectedAccount.sf_balance_date) * 1000)
       : null;
     
+    // Get the category color
+    const categoryName = selectedAccount.category || 'Uncategorized';
+    const categoryColor = getCategoryColor(selectedAccount.category, categories);
+    
     return (
       <Modal 
         isOpen={isDetailModalOpen} 
@@ -403,8 +529,64 @@ const Accounts = () => {
               <Box>
                 <Text fontSize="sm" color={textColor}>Balance</Text>
                 <Text fontSize="2xl" fontWeight="bold" color={color}>
-                  ${amount.toFixed(2)}
+                  {formatCurrency(amount)}
                 </Text>
+              </Box>
+              
+              <Box>
+                <Text fontSize="sm" color={textColor}>Category</Text>
+                {isEditing ? (
+                  <Box mt={2}>
+                    <FormControl>
+                      <SimpleGrid columns={2} spacing={2}>
+                        <Button 
+                          variant={!selectedAccount.category ? "solid" : "outline"}
+                          colorScheme="red"
+                          size="sm"
+                          onClick={() => handleCategoryChange(selectedAccount.sf_account_id, null)}
+                          mb={2}
+                        >
+                          Uncategorized
+                        </Button>
+                        
+                        {/* Render top-level account categories */}
+                        {categories.account_categories.map((category, index) => (
+                          <Button 
+                            key={index}
+                            variant={selectedAccount.category === category.name ? "solid" : "outline"}
+                            colorScheme={category.color.split('.')[0]}
+                            size="sm"
+                            onClick={() => handleCategoryChange(selectedAccount.sf_account_id, category.name)}
+                            mb={2}
+                          >
+                            {category.name}
+                          </Button>
+                        ))}
+                        
+                        {/* Render subcategories with indent */}
+                        {categories.account_categories.flatMap((parentCat) => 
+                          parentCat.subcategories ? parentCat.subcategories.map((subcat, subIndex) => (
+                            <Button 
+                              key={`${parentCat.name}-${subcat.name}-${subIndex}`}
+                              variant={selectedAccount.category === subcat.name ? "solid" : "outline"}
+                              colorScheme={subcat.color.split('.')[0]}
+                              size="sm"
+                              onClick={() => handleCategoryChange(selectedAccount.sf_account_id, subcat.name)}
+                              mb={2}
+                              pl={6}
+                            >
+                              └ {subcat.name}
+                            </Button>
+                          )) : []
+                        )}
+                      </SimpleGrid>
+                    </FormControl>
+                  </Box>
+                ) : (
+                  <Tag colorScheme={getCategoryColor(selectedAccount.category, categories).split('.')[0]} size="md" mt={1}>
+                    {categoryName}
+                  </Tag>
+                )}
               </Box>
               
               <Box>
@@ -477,7 +659,7 @@ const Accounts = () => {
   const BalanceDisplay = ({ balance }: { balance: string }) => {
     const amount = parseFloat(balance || '0')
     const color = amount < 0 ? 'red.500' : amount > 0 ? 'green.500' : textColor
-    return <Text color={color} fontWeight="medium">${amount.toFixed(2)}</Text>
+    return <Text color={color} fontWeight="medium">{formatCurrency(amount)}</Text>
   }
 
   // Handle row click for desktop
@@ -550,7 +732,7 @@ const Accounts = () => {
   const sortedAccounts = sortAccounts(accounts);
 
   if (isLoading) return <Spinner />
-  if (error) return <Alert status="error"><AlertIcon />{error}</Alert>
+  if (queryError) return <Alert status="error"><AlertIcon />{queryError.message}</Alert>
 
   return (
     <Box position="relative" pb={16}>
@@ -715,7 +897,7 @@ const Accounts = () => {
                                           parseFloat(acc.balance) < 0 ? 'red.500' : 
                                           parseFloat(acc.balance) > 0 ? 'green.500' : textColor
                                         }>
-                                          ${parseFloat(acc.balance).toFixed(2)}
+                                          {formatCurrency(parseFloat(acc.balance))}
                                         </Text>
                                       </Box>
                                       

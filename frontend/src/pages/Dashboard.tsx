@@ -14,6 +14,16 @@ interface Account {
   source: string;
 }
 
+// Currency formatter for consistent display
+const formatCurrency = (amount: number): string => {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(amount);
+};
+
 const fetchUserAccounts = async (jwt: string): Promise<Account[]> => {
   const response = await axios.get('/api/v1/user_accounts', {
     headers: {
@@ -29,6 +39,13 @@ const Dashboard = () => {
   const jwt = session?.access_token;
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  
+  // Color scheme consistent with Accounts page
+  const cardBg = useColorModeValue('white', 'gray.700');
+  const subtleText = useColorModeValue('gray.600', 'gray.400');
+  const headerColor = useColorModeValue('blue.600', 'blue.200');
+  const borderColor = useColorModeValue('gray.200', 'gray.600');
+  const tileBg = useColorModeValue('white', 'gray.800');
 
   const { data: accounts, isLoading } = useQuery<Account[]>({
     queryKey: ['userAccounts', userId],
@@ -68,9 +85,6 @@ const Dashboard = () => {
       }, 0)
     : 0;
 
-  const cardBg = useColorModeValue('white', 'gray.700');
-  const subtleText = useColorModeValue('gray.600', 'gray.400');
-
   if (isLoading) {
     return <Spinner />;
   }
@@ -78,16 +92,27 @@ const Dashboard = () => {
   return (
     <Box w="100%">
       <VStack align="stretch" spacing={8}>
-        <Box>
-          <Heading size="lg">Dashboard</Heading>
-          <Text color={subtleText}>Your financial overview</Text>
-        </Box>
+        <Heading 
+          size="lg" 
+          mb={6} 
+          color={headerColor} 
+          borderBottom="2px solid" 
+          borderColor={borderColor} 
+          pb={2}
+        >
+          Dashboard
+          <Text color={subtleText} fontSize="md" fontWeight="normal" mt={1}>
+            Your financial overview
+          </Text>
+        </Heading>
+        
         {error && (
           <Alert status="error">
             <AlertIcon />
             {error}
           </Alert>
         )}
+        
         <Grid 
           templateColumns={{ 
             base: "1fr",
@@ -96,16 +121,19 @@ const Dashboard = () => {
           }}
           gap={6}
         >
-          <Box bg={cardBg} p={6} rounded="lg" shadow="sm">
-            <Text color={subtleText} mb={2}>Net Worth</Text>
-            <Heading size="lg">${netWorth.toFixed(2)}</Heading>
+          <Box bg={tileBg} p={6} rounded="lg" shadow="md" borderWidth="1px" borderColor={borderColor}>
+            <Text color={subtleText} mb={2} fontWeight="medium">Net Worth</Text>
+            <Heading size="lg" color={netWorth >= 0 ? "green.500" : "red.500"}>
+              {formatCurrency(netWorth)}
+            </Heading>
             <Text color={subtleText} fontSize="sm" mt={1}>Across all accounts</Text>
-            <Button mt={4} onClick={() => refreshAccounts()} isLoading={refreshing}>
+            <Button mt={4} onClick={() => refreshAccounts()} isLoading={refreshing} colorScheme="blue" size="sm">
               Refresh
             </Button>
           </Box>
-          <Box bg={cardBg} p={6} rounded="lg" shadow="sm">
-            <Text color={subtleText} mb={2}>Number of Accounts</Text>
+          
+          <Box bg={tileBg} p={6} rounded="lg" shadow="md" borderWidth="1px" borderColor={borderColor}>
+            <Text color={subtleText} mb={2} fontWeight="medium">Number of Accounts</Text>
             <Heading size="lg">{accounts?.length || 0}</Heading>
             <Text color={subtleText} fontSize="sm" mt={1}>Active accounts</Text>
           </Box>
