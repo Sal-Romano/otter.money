@@ -417,7 +417,7 @@ const Settings = () => {
       : categories.transaction_categories;
     
     // Only do this check if we're changing from a top-level category to a subcategory
-    if (!parentCategory && editingCategory.subcategories?.length > 0) {
+    if (!parentCategory && editingCategory.subcategories && editingCategory.subcategories.length > 0) {
       // We're trying to reassign a parent with children
       const newParentCategory = document.getElementById('edit-parent-select') as HTMLSelectElement;
       if (newParentCategory && newParentCategory.value) {

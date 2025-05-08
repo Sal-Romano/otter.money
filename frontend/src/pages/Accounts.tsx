@@ -55,7 +55,7 @@ import {
 import { useEffect, useState, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import axios from 'axios'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { 
   AddIcon, 
   ChevronDownIcon, 
@@ -68,16 +68,18 @@ import {
   CloseIcon
 } from '@chakra-ui/icons'
 import { supabase } from '../lib/supabase'
+import ScrollableArea, { scrollbarStyle } from '../components/ScrollableArea'
 
 // Type for account object from user_accounts table
 interface Account {
   sf_account_id: string;
   sf_account_name: string;
+  display_name: string | null;
   sf_name: string;
   balance: string;
   sf_balance_date: string;
   source: string;
-  category?: string;
+  category?: string | null;
 }
 
 // Update types to match the new category structure
@@ -93,7 +95,7 @@ interface CategoryStructure {
 }
 
 // Change the getCategoryColor function to work with the new structure
-const getCategoryColor = (categoryName: string | undefined, categoryStructure: CategoryStructure): string => {
+const getCategoryColor = (categoryName: string | undefined | null, categoryStructure: CategoryStructure): string => {
   if (!categoryName) return 'red.500'; // Default for "Uncategorized"
   
   // Check in top-level account categories
@@ -122,13 +124,18 @@ const formatCurrency = (amount: number): string => {
 };
 
 // Type for sorting
-type SortField = 'sf_account_name' | 'sf_name' | 'balance' | 'sf_balance_date' | 'source';
+type SortField = 'display_name' | 'sf_name' | 'balance' | 'sf_balance_date' | 'source' | 'category';
 type SortDirection = 'asc' | 'desc';
 
 interface SortConfig {
   field: SortField;
   direction: SortDirection;
 }
+
+// Add this function to get Account name (display_name with fallback to sf_account_name)
+const getAccountName = (account: Account): string => {
+  return account.display_name || account.sf_account_name || 'Unnamed Account';
+};
 
 // Fetch accounts function for React Query
 const fetchUserAccounts = async (jwt: string): Promise<Account[]> => {
@@ -141,6 +148,7 @@ const fetchUserAccounts = async (jwt: string): Promise<Account[]> => {
 };
 
 const Accounts = () => {
+  const queryClient = useQueryClient();
   const textColor = useColorModeValue('gray.600', 'gray.300')
   const cardBg = useColorModeValue('white', 'gray.700')
   const tableBg = useColorModeValue('white', 'gray.800')
@@ -176,7 +184,7 @@ const Accounts = () => {
   
   // State for editing
   const [isEditing, setIsEditing] = useState(false)
-  const [editedAccountName, setEditedAccountName] = useState('')
+  const [editedDisplayName, setEditedDisplayName] = useState('')
 
   // State for sorting - Default to Balance Z-A
   const [sortConfig, setSortConfig] = useState<SortConfig>({
@@ -188,7 +196,7 @@ const Accounts = () => {
   const [categories, setCategories] = useState<CategoryStructure>({
     account_categories: [],
     transaction_categories: []
-  });
+  })
   
   // Fix the React Query linter error by removing the callback and using useEffect
   const { data: userSettings } = useQuery({
@@ -229,22 +237,41 @@ const Accounts = () => {
     }
   }, [userSettings]);
 
-  // Add a function to update the account category
+  // Fix the handleCategoryChange function to update React Query cache directly
   const handleCategoryChange = async (accountId: string, categoryName: string | null) => {
     if (!user || !session) return;
     
     try {
+      // Update the database
       const { error } = await supabase
         .from('user_accounts')
         .update({ 
           category: categoryName 
         })
         .eq('sf_account_id', accountId);
-        
+          
       if (error) throw error;
       
-      // Refresh the accounts data
-      refetch();
+      // Update selected account in state immediately
+      if (selectedAccount && selectedAccount.sf_account_id === accountId) {
+        setSelectedAccount({
+          ...selectedAccount,
+          category: categoryName
+        });
+      }
+      
+      // Update the React Query cache directly for immediate UI updates
+      queryClient.setQueryData<Account[]>(['userAccounts', user.id], (oldData = []) => {
+        return oldData.map(acc => {
+          if (acc.sf_account_id === accountId) {
+            return {
+              ...acc,
+              category: categoryName
+            };
+          }
+          return acc;
+        });
+      });
       
       toast({
         title: 'Category updated',
@@ -267,14 +294,16 @@ const Accounts = () => {
     queryFn: () => session?.access_token ? fetchUserAccounts(session.access_token) : Promise.resolve([]),
     enabled: !!user && !!session?.access_token,
     staleTime: 5 * 60 * 1000, // Data considered fresh for 5 minutes
-    refetchOnWindowFocus: false, // Prevent refetch when window gets focus
-    refetchOnMount: false, // Prevent refetch on component mount if data exists
+    gcTime: 10 * 60 * 1000, // Keep data in cache for 10 minutes (previously called cacheTime)
+    refetchOnWindowFocus: false, 
+    refetchOnMount: true,  // Ensure fresh data when component mounts
   });
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value })
   }
 
+  // In the handleAddAccount function, add display_name and set sf_account_name to null for manual accounts
   const handleAddAccount = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!user || !session) return
@@ -283,10 +312,12 @@ const Accounts = () => {
       // Add account directly via API
       const newAccount = {
         sf_account_id: `manual-${Date.now()}-${Math.floor(Math.random() * 10000)}`, // Generate a unique ID
-        sf_account_name: form.sf_account_name,
+        sf_account_name: null, // Set to null for manual accounts
+        display_name: form.sf_account_name, // Use the form input as display_name
         sf_name: form.sf_name,
         balance: form.balance || '0',
-        sf_balance_date: form.sf_balance_date ? Math.floor(new Date(form.sf_balance_date).getTime() / 1000) : Math.floor(Date.now() / 1000)
+        sf_balance_date: form.sf_balance_date ? Math.floor(new Date(form.sf_balance_date).getTime() / 1000) : Math.floor(Date.now() / 1000),
+        source: 'manual'
       }
       
       await axios.post(`/api/v1/user_accounts?user_id=${user.id}`, newAccount, {
@@ -309,27 +340,75 @@ const Accounts = () => {
     }
   }
 
+  // Fix the handleUpdateDisplayName function to update React Query cache directly
+  const handleUpdateDisplayName = async (accountId: string, newDisplayName: string) => {
+    if (!user || !session) return;
+    
+    try {
+      // Update the database
+      const { error } = await supabase
+        .from('user_accounts')
+        .update({ 
+          display_name: newDisplayName 
+        })
+        .eq('sf_account_id', accountId);
+        
+      if (error) throw error;
+      
+      // Update selected account in state immediately
+      if (selectedAccount && selectedAccount.sf_account_id === accountId) {
+        setSelectedAccount({
+          ...selectedAccount,
+          display_name: newDisplayName
+        });
+      }
+      
+      // Update the React Query cache directly for immediate UI updates
+      queryClient.setQueryData<Account[]>(['userAccounts', user.id], (oldData = []) => {
+        return oldData.map(acc => {
+          if (acc.sf_account_id === accountId) {
+            return {
+              ...acc,
+              display_name: newDisplayName
+            };
+          }
+          return acc;
+        });
+      });
+      
+      toast({
+        title: 'Account name updated',
+        status: 'success',
+        duration: 3000,
+      });
+      
+      // Exit edit mode
+      setIsEditing(false);
+    } catch (error: any) {
+      toast({
+        title: 'Error updating account name',
+        description: error.message,
+        status: 'error',
+        duration: 5000,
+      });
+    }
+  };
+
   // Toggle edit mode and set initial value
   const toggleEditMode = () => {
     if (isEditing && selectedAccount) {
-      // Here you would handle the actual update - not implemented yet
-      // For now just show a toast to indicate it would save
-      toast({
-        title: "Edit mode",
-        description: "This would save the changes (not implemented yet)",
-        status: "info",
-        duration: 3000
-      });
+      // Save changes
+      handleUpdateDisplayName(selectedAccount.sf_account_id, editedDisplayName);
+    } else if (!isEditing && selectedAccount) {
+      // Set the current value when entering edit mode
+      setEditedDisplayName(getAccountName(selectedAccount));
     }
     
-    if (!isEditing && selectedAccount) {
-      setEditedAccountName(selectedAccount.sf_account_name);
-    }
-    
+    // Toggle edit mode
     setIsEditing(!isEditing);
   };
 
-  // Sorting function
+  // Sorting function - update to use display_name and add category
   const sortAccounts = (accounts: Account[]): Account[] => {
     const { field, direction } = sortConfig;
     return [...accounts].sort((a, b) => {
@@ -345,6 +424,24 @@ const Accounts = () => {
         const aVal = parseInt(a[field] || '0');
         const bVal = parseInt(b[field] || '0');
         return direction === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+      
+      // Special case for display_name with fallback
+      if (field === 'display_name') {
+        const aVal = getAccountName(a);
+        const bVal = getAccountName(b);
+        return direction === 'asc' 
+          ? aVal.localeCompare(bVal) 
+          : bVal.localeCompare(aVal);
+      }
+      
+      // Special case for category which might be undefined or null
+      if (field === 'category') {
+        const aVal = a[field] || 'Uncategorized';
+        const bVal = b[field] || 'Uncategorized';
+        return direction === 'asc' 
+          ? aVal.localeCompare(bVal) 
+          : bVal.localeCompare(aVal);
       }
       
       // General case for string fields
@@ -451,7 +548,68 @@ const Accounts = () => {
     </Modal>
   )
 
-  // Detail modal for mobile view
+  // Update the renderCategoryTree function to use our ScrollableArea component
+  const renderCategoryTree = () => {
+    return (
+      <Box mt={2}>
+        <FormControl>
+          <ScrollableArea maxHeight="300px" pr={1}>
+            <VStack align="stretch" spacing={2} p={1}>
+              <Button 
+                variant={!selectedAccount?.category ? "solid" : "outline"}
+                colorScheme="red"
+                size="sm"
+                onClick={() => selectedAccount && handleCategoryChange(selectedAccount.sf_account_id, null)}
+                justifyContent="flex-start"
+                px={3}
+              >
+                Uncategorized
+              </Button>
+              
+              <Divider />
+              
+              {/* Render top-level account categories */}
+              {categories.account_categories.map((category, index) => (
+                <Box key={index}>
+                  <Button 
+                    variant={selectedAccount?.category === category.name ? "solid" : "outline"}
+                    colorScheme={category.color.split('.')[0]}
+                    size="sm"
+                    onClick={() => selectedAccount && handleCategoryChange(selectedAccount.sf_account_id, category.name)}
+                    justifyContent="flex-start"
+                    width="100%"
+                    mb={category.subcategories && category.subcategories.length > 0 ? 1 : 2}
+                  >
+                    {category.name}
+                  </Button>
+                  
+                  {/* Render subcategories if any */}
+                  {category.subcategories && category.subcategories.length > 0 && (
+                    <VStack align="stretch" pl={4} spacing={1} mb={2}>
+                      {category.subcategories.map((subcat, subIndex) => (
+                        <Button 
+                          key={`${category.name}-${subcat.name}-${subIndex}`}
+                          variant={selectedAccount?.category === subcat.name ? "solid" : "outline"}
+                          colorScheme={category.color.split('.')[0]}
+                          size="xs"
+                          onClick={() => selectedAccount && handleCategoryChange(selectedAccount.sf_account_id, subcat.name)}
+                          justifyContent="flex-start"
+                        >
+                          └ {subcat.name}
+                        </Button>
+                      ))}
+                    </VStack>
+                  )}
+                </Box>
+              ))}
+            </VStack>
+          </ScrollableArea>
+        </FormControl>
+      </Box>
+    );
+  };
+
+  // Update AccountDetailModal to use tree display for categories and edit display_name
   const AccountDetailModal = () => {
     if (!selectedAccount) return null;
     
@@ -464,6 +622,8 @@ const Accounts = () => {
     // Get the category color
     const categoryName = selectedAccount.category || 'Uncategorized';
     const categoryColor = getCategoryColor(selectedAccount.category, categories);
+    
+    // Render category tree for selection in edit mode - use the shared renderCategoryTree function
     
     return (
       <Modal 
@@ -505,8 +665,8 @@ const Accounts = () => {
                 {isEditing ? (
                   <InputGroup size="lg">
                     <Input 
-                      value={editedAccountName}
-                      onChange={(e) => setEditedAccountName(e.target.value)}
+                      value={editedDisplayName}
+                      onChange={(e) => setEditedDisplayName(e.target.value)}
                       fontWeight="bold"
                       variant="flushed"
                       pl={0}
@@ -517,7 +677,7 @@ const Accounts = () => {
                     </InputRightElement>
                   </InputGroup>
                 ) : (
-                  <Text fontSize="xl" fontWeight="bold">{selectedAccount.sf_account_name}</Text>
+                  <Text fontSize="xl" fontWeight="bold">{getAccountName(selectedAccount)}</Text>
                 )}
               </Box>
               
@@ -535,55 +695,8 @@ const Accounts = () => {
               
               <Box>
                 <Text fontSize="sm" color={textColor}>Category</Text>
-                {isEditing ? (
-                  <Box mt={2}>
-                    <FormControl>
-                      <SimpleGrid columns={2} spacing={2}>
-                        <Button 
-                          variant={!selectedAccount.category ? "solid" : "outline"}
-                          colorScheme="red"
-                          size="sm"
-                          onClick={() => handleCategoryChange(selectedAccount.sf_account_id, null)}
-                          mb={2}
-                        >
-                          Uncategorized
-                        </Button>
-                        
-                        {/* Render top-level account categories */}
-                        {categories.account_categories.map((category, index) => (
-                          <Button 
-                            key={index}
-                            variant={selectedAccount.category === category.name ? "solid" : "outline"}
-                            colorScheme={category.color.split('.')[0]}
-                            size="sm"
-                            onClick={() => handleCategoryChange(selectedAccount.sf_account_id, category.name)}
-                            mb={2}
-                          >
-                            {category.name}
-                          </Button>
-                        ))}
-                        
-                        {/* Render subcategories with indent */}
-                        {categories.account_categories.flatMap((parentCat) => 
-                          parentCat.subcategories ? parentCat.subcategories.map((subcat, subIndex) => (
-                            <Button 
-                              key={`${parentCat.name}-${subcat.name}-${subIndex}`}
-                              variant={selectedAccount.category === subcat.name ? "solid" : "outline"}
-                              colorScheme={subcat.color.split('.')[0]}
-                              size="sm"
-                              onClick={() => handleCategoryChange(selectedAccount.sf_account_id, subcat.name)}
-                              mb={2}
-                              pl={6}
-                            >
-                              └ {subcat.name}
-                            </Button>
-                          )) : []
-                        )}
-                      </SimpleGrid>
-                    </FormControl>
-                  </Box>
-                ) : (
-                  <Tag colorScheme={getCategoryColor(selectedAccount.category, categories).split('.')[0]} size="md" mt={1}>
+                {isEditing ? renderCategoryTree() : (
+                  <Tag colorScheme={categoryColor.split('.')[0]} size="md" mt={1}>
                     {categoryName}
                   </Tag>
                 )}
@@ -613,16 +726,26 @@ const Accounts = () => {
                 borderRadius="md"
               >
                 <Text fontSize="sm" fontWeight="bold" color={textColor} mb={2}>Technical Details</Text>
-                <HStack fontSize="xs" color={textColor}>
-                  <Text>ID:</Text>
-                  <Text fontFamily="monospace">{selectedAccount.sf_account_id}</Text>
-                </HStack>
-                {selectedAccount.sf_balance_date && (
-                  <HStack fontSize="xs" color={textColor} mt={1}>
-                    <Text>Timestamp:</Text>
-                    <Text fontFamily="monospace">{selectedAccount.sf_balance_date}</Text>
+                <VStack align="stretch" spacing={2} fontSize="xs" color={textColor}>
+                  <HStack>
+                    <Text>ID:</Text>
+                    <Text fontFamily="monospace">{selectedAccount.sf_account_id}</Text>
                   </HStack>
-                )}
+                  
+                  {selectedAccount.sf_account_name && (
+                    <HStack>
+                      <Text>Original Name:</Text>
+                      <Text fontFamily="monospace">{selectedAccount.sf_account_name}</Text>
+                    </HStack>
+                  )}
+                  
+                  {selectedAccount.sf_balance_date && (
+                    <HStack>
+                      <Text>Timestamp:</Text>
+                      <Text fontFamily="monospace">{selectedAccount.sf_balance_date}</Text>
+                    </HStack>
+                  )}
+                </VStack>
               </Box>
             </VStack>
           </ModalBody>
@@ -691,16 +814,17 @@ const Accounts = () => {
         mt={1}
         leftIcon={<ArrowUpDownIcon />}
       >
-        Sort: {sortConfig.field === 'sf_account_name' ? 'Name' : 
+        Sort: {sortConfig.field === 'display_name' ? 'Name' : 
                sortConfig.field === 'sf_name' ? 'Institution' :
                sortConfig.field === 'balance' ? 'Balance' :
-               sortConfig.field === 'sf_balance_date' ? 'Date' : 'Source'}
+               sortConfig.field === 'sf_balance_date' ? 'Date' :
+               sortConfig.field === 'category' ? 'Category' : 'Source'}
         {' '}
         {sortConfig.direction === 'asc' ? '(A-Z)' : '(Z-A)'}
       </MenuButton>
       <MenuList>
-        <MenuItem onClick={() => handleSort('sf_account_name')}>
-          Name {sortConfig.field === 'sf_account_name' && (
+        <MenuItem onClick={() => handleSort('display_name')}>
+          Name {sortConfig.field === 'display_name' && (
             sortConfig.direction === 'asc' ? <TriangleUpIcon ml={2} /> : <TriangleDownIcon ml={2} />
           )}
         </MenuItem>
@@ -719,6 +843,11 @@ const Accounts = () => {
             sortConfig.direction === 'asc' ? <TriangleUpIcon ml={2} /> : <TriangleDownIcon ml={2} />
           )}
         </MenuItem>
+        <MenuItem onClick={() => handleSort('category')}>
+          Category {sortConfig.field === 'category' && (
+            sortConfig.direction === 'asc' ? <TriangleUpIcon ml={2} /> : <TriangleDownIcon ml={2} />
+          )}
+        </MenuItem>
         <MenuItem onClick={() => handleSort('source')}>
           Source {sortConfig.field === 'source' && (
             sortConfig.direction === 'asc' ? <TriangleUpIcon ml={2} /> : <TriangleDownIcon ml={2} />
@@ -730,6 +859,18 @@ const Accounts = () => {
 
   // Get sorted accounts
   const sortedAccounts = sortAccounts(accounts);
+
+  // Add a CategoryDisplay component to render in the table
+  const CategoryDisplay = ({ category }: { category?: string | null }) => {
+    const categoryName = category || 'Uncategorized';
+    const categoryColor = getCategoryColor(category, categories).split('.')[0];
+    
+    return (
+      <Tag colorScheme={categoryColor} size="sm">
+        {categoryName}
+      </Tag>
+    );
+  };
 
   if (isLoading) return <Spinner />
   if (queryError) return <Alert status="error"><AlertIcon />{queryError.message}</Alert>
@@ -763,10 +904,10 @@ const Accounts = () => {
                       fontWeight="bold" 
                       fontSize="md"
                       cursor="pointer"
-                      onClick={() => handleSort('sf_account_name')}
+                      onClick={() => handleSort('display_name')}
                     >
                       <Flex align="center">
-                        Name <SortIndicator field="sf_account_name" />
+                        Name <SortIndicator field="display_name" />
                       </Flex>
                     </Th>
                     <Th 
@@ -790,6 +931,17 @@ const Accounts = () => {
                     >
                       <Flex justify="flex-end" align="center">
                         Balance <SortIndicator field="balance" />
+                      </Flex>
+                    </Th>
+                    <Th 
+                      color={headerColor} 
+                      fontWeight="bold" 
+                      fontSize="md"
+                      cursor="pointer"
+                      onClick={() => handleSort('category')}
+                    >
+                      <Flex align="center">
+                        Category <SortIndicator field="category" />
                       </Flex>
                     </Th>
                     <Th 
@@ -827,10 +979,13 @@ const Accounts = () => {
                         cursor="pointer"
                         onClick={() => handleRowClick(acc.sf_account_id)}
                       >
-                        <Td fontWeight="medium">{acc.sf_account_name}</Td>
+                        <Td fontWeight="medium">{getAccountName(acc)}</Td>
                         <Td>{acc.sf_name}</Td>
                         <Td isNumeric>
                           <BalanceDisplay balance={acc.balance} />
+                        </Td>
+                        <Td>
+                          <CategoryDisplay category={acc.category} />
                         </Td>
                         <Td>{acc.sf_balance_date ? new Date(parseInt(acc.sf_balance_date) * 1000).toLocaleDateString() : ''}</Td>
                         <Td>
@@ -846,7 +1001,7 @@ const Accounts = () => {
                         </Td>
                       </Tr>
                       <Tr>
-                        <Td colSpan={6} p={0}>
+                        <Td colSpan={7} p={0}>
                           <Collapse in={expandedRow === acc.sf_account_id} animateOpacity>
                             <SlideFade in={expandedRow === acc.sf_account_id} offsetY="20px">
                               <Box 
@@ -867,8 +1022,8 @@ const Accounts = () => {
                                         {expandedRow === acc.sf_account_id && isEditing ? (
                                           <InputGroup>
                                             <Input 
-                                              value={editedAccountName}
-                                              onChange={(e) => setEditedAccountName(e.target.value)}
+                                              value={editedDisplayName}
+                                              onChange={(e) => setEditedDisplayName(e.target.value)}
                                               fontWeight="bold"
                                               size="md"
                                               autoFocus
@@ -878,7 +1033,7 @@ const Accounts = () => {
                                             </InputRightElement>
                                           </InputGroup>
                                         ) : (
-                                          <Text fontWeight="bold">{acc.sf_account_name}</Text>
+                                          <Text fontWeight="bold">{getAccountName(acc)}</Text>
                                         )}
                                       </Box>
                                       
@@ -902,8 +1057,12 @@ const Accounts = () => {
                                       </Box>
                                       
                                       <Box>
-                                        <Text fontSize="sm" color={textColor}>Last Updated</Text>
-                                        <Text>{formatDateTime(acc.sf_balance_date)}</Text>
+                                        <Text fontSize="sm" color={textColor}>Category</Text>
+                                        {expandedRow === acc.sf_account_id && isEditing ? (
+                                          renderCategoryTree()
+                                        ) : (
+                                          <CategoryDisplay category={acc.category} />
+                                        )}
                                       </Box>
                                     </Stack>
                                   </GridItem>
@@ -920,6 +1079,15 @@ const Accounts = () => {
                                             {acc.sf_account_id}
                                           </Text>
                                         </Box>
+                                        
+                                        {acc.sf_account_name && (
+                                          <Box>
+                                            <Text fontSize="xs" color={textColor}>Original Name:</Text>
+                                            <Text fontSize="xs" fontFamily="monospace" overflowX="auto">
+                                              {acc.sf_account_name}
+                                            </Text>
+                                          </Box>
+                                        )}
                                         
                                         <Box>
                                           <Text fontSize="xs" color={textColor}>Source:</Text>
@@ -950,7 +1118,7 @@ const Accounts = () => {
                                       e.stopPropagation();
                                       if (expandedRow === acc.sf_account_id) {
                                         setSelectedAccount(acc);
-                                        setEditedAccountName(acc.sf_account_name);
+                                        setEditedDisplayName(getAccountName(acc));
                                         toggleEditMode();
                                       }
                                     }}
@@ -969,7 +1137,7 @@ const Accounts = () => {
                     onClick={onOpen}
                     bg={useColorModeValue('gray.50', 'gray.700')}
                   >
-                    <Td colSpan={6}>
+                    <Td colSpan={7}>
                       <Flex alignItems="center" justifyContent="center" py={2}>
                         <AddIcon mr={2} />
                         <Text fontWeight="medium">Add New Account</Text>
@@ -999,7 +1167,7 @@ const Accounts = () => {
                   <CardHeader bg={headerBg} py={3} px={4}>
                     <Flex justifyContent="space-between" alignItems="center">
                       <Text fontWeight="bold" color={headerColor} isTruncated maxW="70%">
-                        {acc.sf_account_name}
+                        {getAccountName(acc)}
                       </Text>
                     </Flex>
                   </CardHeader>

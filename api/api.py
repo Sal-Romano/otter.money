@@ -132,7 +132,7 @@ def get_user_accounts(
         raise HTTPException(status_code=401, detail="Missing or invalid API key or JWT")
 
     # Always return all accounts from user_accounts
-    resp = supabase.table("user_accounts").select("sf_account_id, sf_account_name, sf_name, balance, sf_balance_date, source").eq("user_id", user_id).execute()
+    resp = supabase.table("user_accounts").select("sf_account_id, sf_account_name, sf_name, balance, sf_balance_date, category, display_name, source").eq("user_id", user_id).execute()
     if resp.data and len(resp.data) > 0:
         return {"accounts": resp.data}
 
@@ -150,7 +150,7 @@ def get_user_accounts(
         accounts = resp_sf.json().get("accounts", [])
         upsert_user_accounts(user_id, accounts, source="simplefin-bridge")
         # Return the upserted data
-        resp = supabase.table("user_accounts").select("sf_account_id, sf_account_name, sf_name, balance, sf_balance_date, source").eq("user_id", user_id).execute()
+        resp = supabase.table("user_accounts").select("sf_account_id, sf_account_name, sf_name, balance, sf_balance_date, category, display_name,source").eq("user_id", user_id).execute()
         return {"accounts": resp.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
