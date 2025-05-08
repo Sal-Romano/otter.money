@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Box, Button, FormControl, FormLabel, Input, VStack, Text, useToast, Heading, useColorModeValue } from '@chakra-ui/react'
+import { Box, Button, FormControl, FormLabel, Input, VStack, Text, useToast, Heading, useColorModeValue, Flex, Image } from '@chakra-ui/react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import axios from 'axios'
@@ -79,7 +79,10 @@ const Login = () => {
         shadow="lg"
       >
         <VStack spacing={6}>
-          <Heading size="lg">Otter Money</Heading>
+          <Flex alignItems="center">
+            <Image src="/logo.png" alt="Otter Money Logo" boxSize="40px" mr={2} />
+            <Heading size="lg">Otter Money</Heading>
+          </Flex>
           <Heading size="md">{isSignUp ? 'Create Account' : 'Welcome Back'}</Heading>
 
           <form onSubmit={handleSubmit} style={{ width: '100%' }}>

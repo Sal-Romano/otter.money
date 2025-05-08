@@ -1,4 +1,4 @@
-import { Box, Container, Flex, IconButton, Menu, MenuButton, MenuItem, MenuList, useBreakpointValue, useColorModeValue } from '@chakra-ui/react'
+import { Box, Container, Flex, IconButton, Menu, MenuButton, MenuItem, MenuList, useBreakpointValue, useColorModeValue, Image } from '@chakra-ui/react'
 import { HamburgerIcon, SettingsIcon } from '@chakra-ui/icons'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
@@ -30,9 +30,12 @@ const MainLayout = ({ children }: MainLayoutProps) => {
       >
         <Container maxW="container.xl" display="flex" alignItems="center" justifyContent="space-between">
           <Link to="/">
-            <Box fontSize="xl" fontWeight="bold" color="blue.500">
-              Otter Money
-            </Box>
+            <Flex alignItems="center">
+              <Image src="/logo.png" alt="Otter Money Logo" boxSize="45px" mr={2} />
+              <Box fontSize="xl" fontWeight="bold" color="blue.500">
+                Otter Money
+              </Box>
+            </Flex>
           </Link>
 
           {isMobile ? (

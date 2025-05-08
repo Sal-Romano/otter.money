@@ -34,6 +34,9 @@ const Dashboard = () => {
     queryKey: ['userAccounts', userId],
     queryFn: () => jwt ? fetchUserAccounts(jwt) : Promise.resolve([]),
     enabled: !!userId && !!jwt,
+    staleTime: 5 * 60 * 1000, // Data considered fresh for 5 minutes
+    refetchOnWindowFocus: false, // Prevent refetch when window gets focus
+    refetchOnMount: false, // Prevent refetch on component mount if data exists
   });
 
   const { mutate: refreshAccounts, isPending: refreshing } = useMutation({
