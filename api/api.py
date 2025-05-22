@@ -183,6 +183,17 @@ def add_manual_account(
     upsert_user_accounts(user_id, [account], source="manual")
     return {"status": "success"}
 
+# Import and include sync router
+try:
+    import sys
+    import os
+    sys.path.append(os.path.dirname(__file__))
+    from routers.sync import router as sync_router
+    app.include_router(sync_router, prefix="/api/v1")
+    logging.info("Sync router loaded successfully")
+except ImportError as e:
+    logging.warning(f"Failed to load sync router: {e}")
+
 if __name__ == "__main__":
     import sys
     import threading
