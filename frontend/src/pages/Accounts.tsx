@@ -1,76 +1,29 @@
 import { 
-  Box, 
-  Heading, 
-  Text, 
-  useColorModeValue, 
-  Table, 
-  Thead, 
-  Tbody, 
-  Tr, 
-  Th, 
-  Td, 
-  Spinner, 
-  Alert, 
-  AlertIcon, 
-  Input, 
-  Button, 
-  VStack, 
-  useToast, 
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalCloseButton,
-  useDisclosure,
-  Flex,
-  IconButton,
-  useBreakpointValue,
-  Hide,
-  Card,
-  CardHeader,
-  CardBody,
-  Stack,
-  Badge,
-  Show,
-  SimpleGrid,
-  Collapse,
-  Divider,
-  HStack,
-  ModalFooter,
-  Grid,
-  GridItem,
-  SlideFade,
-  InputGroup,
-  InputRightElement,
-  Menu,
-  MenuButton,
-  MenuList,
-  MenuItem,
-  Portal,
-  Spacer,
-  FormControl,
-  Tag
+  Box, Heading, Text, useColorModeValue, Table, Thead, Tbody, Tr, Th, Td, 
+  Spinner, Alert, AlertIcon, Input, Button, VStack, useToast, 
+  Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton,
+  useDisclosure, Flex, IconButton, useBreakpointValue, Hide, Card, CardHeader, 
+  CardBody, Stack, Badge, Show, SimpleGrid, Collapse, Divider, HStack, 
+  ModalFooter, Grid, GridItem, SlideFade, InputGroup, InputRightElement, 
+  Menu, MenuButton, MenuList, MenuItem, Portal, Spacer, FormControl, Tag
 } from '@chakra-ui/react'
+import { 
+  AddIcon, ChevronDownIcon, ChevronUpIcon, EditIcon, CheckIcon,
+  TriangleUpIcon, TriangleDownIcon, ArrowUpDownIcon, CloseIcon
+} from '@chakra-ui/icons'
 import { useEffect, useState, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import axios from 'axios'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { 
-  AddIcon, 
-  ChevronDownIcon, 
-  ChevronUpIcon, 
-  EditIcon, 
-  CheckIcon,
-  TriangleUpIcon,
-  TriangleDownIcon,
-  ArrowUpDownIcon,
-  CloseIcon
-} from '@chakra-ui/icons'
 import { supabase } from '../lib/supabase'
 import ScrollableArea, { scrollbarStyle } from '../components/ScrollableArea'
+import DataTable, { SortConfig, SortDirection } from '../components/DataTable'
+import DataCard, { CardField } from '../components/DataCard'
+import CurrencyDisplay, { formatCurrency } from '../components/CurrencyDisplay'
+import { CategoryDisplay, CategorySelector, CategoryStructure, Category, getCategoryColor } from '../components/CategoryManager'
+import SortMenu, { SortOption } from '../components/SortMenu'
 
-// Type for account object from user_accounts table
+// Type for account object from om_user_accounts table
 interface Account {
   sf_account_id: string;
   sf_account_name: string;
@@ -82,55 +35,8 @@ interface Account {
   category?: string | null;
 }
 
-// Update types to match the new category structure
-interface Category {
-  name: string;
-  color: string;
-  subcategories?: Category[];
-}
-
-interface CategoryStructure {
-  account_categories: Category[];
-  transaction_categories: Category[];
-}
-
-// Change the getCategoryColor function to work with the new structure
-const getCategoryColor = (categoryName: string | undefined | null, categoryStructure: CategoryStructure): string => {
-  if (!categoryName) return 'red.500'; // Default for "Uncategorized"
-  
-  // Check in top-level account categories
-  const category = categoryStructure.account_categories.find(cat => cat.name === categoryName);
-  if (category) return category.color;
-  
-  // Check in subcategories
-  for (const parentCat of categoryStructure.account_categories) {
-    if (parentCat.subcategories) {
-      const subcat = parentCat.subcategories.find(sub => sub.name === categoryName);
-      if (subcat) return subcat.color;
-    }
-  }
-  
-  return 'red.500'; // Default fallback
-};
-
-// Currency formatter for consistent display
-const formatCurrency = (amount: number): string => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(amount);
-};
-
-// Type for sorting
-type SortField = 'display_name' | 'sf_name' | 'balance' | 'sf_balance_date' | 'source' | 'category';
-type SortDirection = 'asc' | 'desc';
-
-interface SortConfig {
-  field: SortField;
-  direction: SortDirection;
-}
+// For sorting data
+type SortField = keyof Account;
 
 // Add this function to get Account name (display_name with fallback to sf_account_name)
 const getAccountName = (account: Account): string => {
@@ -187,7 +93,7 @@ const Accounts = () => {
   const [editedDisplayName, setEditedDisplayName] = useState('')
 
   // State for sorting - Default to Balance Z-A
-  const [sortConfig, setSortConfig] = useState<SortConfig>({
+  const [sortConfig, setSortConfig] = useState<SortConfig<Account>>({
     field: 'balance',
     direction: 'desc'
   })
@@ -205,7 +111,7 @@ const Accounts = () => {
       if (!session?.access_token || !user) return null;
       
       const { data, error } = await supabase
-        .from('user_settings')
+        .from('om_user_settings')
         .select('*')
         .eq('id', user.id)
         .single();
@@ -244,7 +150,7 @@ const Accounts = () => {
     try {
       // Update the database
       const { error } = await supabase
-        .from('user_accounts')
+        .from('om_user_accounts')
         .update({ 
           category: categoryName 
         })
@@ -347,7 +253,7 @@ const Accounts = () => {
     try {
       // Update the database
       const { error } = await supabase
-        .from('user_accounts')
+        .from('om_user_accounts')
         .update({ 
           display_name: newDisplayName 
         })
@@ -454,8 +360,8 @@ const Accounts = () => {
   };
 
   // Handle sorting
-  const handleSort = (field: SortField) => {
-    setSortConfig(prevConfig => {
+  const handleSort = (field: keyof Account) => {
+    setSortConfig((prevConfig: SortConfig<Account>) => {
       if (prevConfig.field === field) {
         // Toggle direction if same field
         return {
@@ -609,21 +515,14 @@ const Accounts = () => {
     );
   };
 
-  // Update AccountDetailModal to use tree display for categories and edit display_name
+  // Update AccountDetailModal to use our components
   const AccountDetailModal = () => {
     if (!selectedAccount) return null;
     
     const amount = parseFloat(selectedAccount.balance || '0');
-    const color = amount < 0 ? 'red.500' : amount > 0 ? 'green.500' : textColor;
     const lastUpdated = selectedAccount.sf_balance_date 
       ? new Date(parseInt(selectedAccount.sf_balance_date) * 1000)
       : null;
-    
-    // Get the category color
-    const categoryName = selectedAccount.category || 'Uncategorized';
-    const categoryColor = getCategoryColor(selectedAccount.category, categories);
-    
-    // Render category tree for selection in edit mode - use the shared renderCategoryTree function
     
     return (
       <Modal 
@@ -688,17 +587,29 @@ const Accounts = () => {
               
               <Box>
                 <Text fontSize="sm" color={textColor}>Balance</Text>
-                <Text fontSize="2xl" fontWeight="bold" color={color}>
-                  {formatCurrency(amount)}
-                </Text>
+                <CurrencyDisplay 
+                  amount={selectedAccount.balance} 
+                  size="2xl" 
+                  fontWeight="bold" 
+                />
               </Box>
               
               <Box>
                 <Text fontSize="sm" color={textColor}>Category</Text>
-                {isEditing ? renderCategoryTree() : (
-                  <Tag colorScheme={categoryColor.split('.')[0]} size="md" mt={1}>
-                    {categoryName}
-                  </Tag>
+                {isEditing ? (
+                  <CategorySelector
+                    categoryStructure={categories}
+                    selectedCategory={selectedAccount.category}
+                    onSelectCategory={(categoryName) => 
+                      handleCategoryChange(selectedAccount.sf_account_id, categoryName)
+                    }
+                  />
+                ) : (
+                  <CategoryDisplay 
+                    categoryName={selectedAccount.category} 
+                    categoryStructure={categories}
+                    size="md"
+                  />
                 )}
               </Box>
               
@@ -778,11 +689,178 @@ const Accounts = () => {
     return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
   };
 
-  // Balance display with positive/negative color
+  // Define column configuration for DataTable
+  const tableColumns = [
+    {
+      key: 'display_name' as keyof Account,
+      label: 'Name',
+      render: (account: Account) => getAccountName(account)
+    },
+    {
+      key: 'sf_name' as keyof Account,
+      label: 'Institution'
+    },
+    {
+      key: 'balance' as keyof Account,
+      label: 'Balance',
+      isNumeric: true,
+      render: (account: Account) => (
+        <CurrencyDisplay amount={account.balance} />
+      )
+    },
+    {
+      key: 'category' as keyof Account,
+      label: 'Category',
+      render: (account: Account) => (
+        <CategoryDisplay 
+          categoryName={account.category} 
+          categoryStructure={categories}
+        />
+      )
+    },
+    {
+      key: 'sf_balance_date' as keyof Account,
+      label: 'Date',
+      render: (account: Account) => (
+        account.sf_balance_date ? new Date(parseInt(account.sf_balance_date) * 1000).toLocaleDateString() : ''
+      )
+    },
+    {
+      key: 'source' as keyof Account,
+      label: 'Source',
+      render: (account: Account) => (
+        <Badge colorScheme={account.source === 'manual' ? 'purple' : 'blue'}>
+          {account.source}
+        </Badge>
+      )
+    }
+  ];
+
+  // Render desktop expanded content
+  const renderExpandedContent = (account: Account) => (
+    <Grid templateColumns="repeat(12, 1fr)" gap={4}>
+      <GridItem colSpan={{ base: 12, lg: 4 }}>
+        <Stack spacing={3}>
+          <Box>
+            <Text fontSize="sm" color={textColor}>Account Name</Text>
+            {expandedRow === account.sf_account_id && isEditing ? (
+              <InputGroup>
+                <Input 
+                  value={editedDisplayName}
+                  onChange={(e) => setEditedDisplayName(e.target.value)}
+                  fontWeight="bold"
+                  size="md"
+                  autoFocus
+                />
+                <InputRightElement>
+                  <CheckIcon color="green.500" />
+                </InputRightElement>
+              </InputGroup>
+            ) : (
+              <Text fontWeight="bold">{getAccountName(account)}</Text>
+            )}
+          </Box>
+          
+          <Box>
+            <Text fontSize="sm" color={textColor}>Institution</Text>
+            <Text>{account.sf_name}</Text>
+          </Box>
+        </Stack>
+      </GridItem>
+      
+      <GridItem colSpan={{ base: 12, lg: 4 }}>
+        <Stack spacing={3}>
+          <Box>
+            <Text fontSize="sm" color={textColor}>Balance</Text>
+            <CurrencyDisplay 
+              amount={account.balance} 
+              size="xl" 
+              fontWeight="bold" 
+            />
+          </Box>
+          
+          <Box>
+            <Text fontSize="sm" color={textColor}>Category</Text>
+            {expandedRow === account.sf_account_id && isEditing ? (
+              <CategorySelector
+                categoryStructure={categories}
+                selectedCategory={account.category}
+                onSelectCategory={(categoryName) => handleCategoryChange(account.sf_account_id, categoryName)}
+              />
+            ) : (
+              <CategoryDisplay 
+                categoryName={account.category} 
+                categoryStructure={categories}
+              />
+            )}
+          </Box>
+        </Stack>
+      </GridItem>
+      
+      <GridItem colSpan={{ base: 12, lg: 4 }}>
+        <Box p={3} bg={sectionBg} borderRadius="md" height="100%">
+          <Text fontSize="sm" fontWeight="bold" color={textColor} mb={2}>
+            Technical Details
+          </Text>
+          <Stack spacing={2}>
+            <Box>
+              <Text fontSize="xs" color={textColor}>ID:</Text>
+              <Text fontSize="xs" fontFamily="monospace" overflowX="auto">
+                {account.sf_account_id}
+              </Text>
+            </Box>
+            
+            {account.sf_account_name && (
+              <Box>
+                <Text fontSize="xs" color={textColor}>Original Name:</Text>
+                <Text fontSize="xs" fontFamily="monospace" overflowX="auto">
+                  {account.sf_account_name}
+                </Text>
+              </Box>
+            )}
+            
+            <Box>
+              <Text fontSize="xs" color={textColor}>Source:</Text>
+              <Badge colorScheme={account.source === 'manual' ? 'purple' : 'blue'} fontSize="xs">
+                {account.source}
+              </Badge>
+            </Box>
+            
+            <Box>
+              <Text fontSize="xs" color={textColor}>Unix Timestamp:</Text>
+              <Text fontSize="xs" fontFamily="monospace">
+                {account.sf_balance_date || 'N/A'}
+              </Text>
+            </Box>
+          </Stack>
+        </Box>
+      </GridItem>
+
+      <GridItem colSpan={12}>
+        <Flex mt={4} borderTop="1px dashed" borderColor={borderColor} pt={3}>
+          <IconButton
+            aria-label="Edit account"
+            icon={isEditing ? <CheckIcon /> : <EditIcon />}
+            size="sm"
+            colorScheme={isEditing ? "green" : "blue"}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (expandedRow === account.sf_account_id) {
+                setSelectedAccount(account);
+                setEditedDisplayName(getAccountName(account));
+                toggleEditMode();
+              }
+            }}
+          />
+          <Spacer />
+        </Flex>
+      </GridItem>
+    </Grid>
+  );
+
+  // Balance display with positive/negative color - use our CurrencyDisplay component
   const BalanceDisplay = ({ balance }: { balance: string }) => {
-    const amount = parseFloat(balance || '0')
-    const color = amount < 0 ? 'red.500' : amount > 0 ? 'green.500' : textColor
-    return <Text color={color} fontWeight="medium">{formatCurrency(amount)}</Text>
+    return <CurrencyDisplay amount={balance} />
   }
 
   // Handle row click for desktop
@@ -802,73 +880,67 @@ const Accounts = () => {
   };
 
   // Mobile sort menu
-  const MobileSortMenu = () => (
-    <Menu>
-      <MenuButton 
-        as={Button} 
-        rightIcon={<ChevronDownIcon />} 
-        size="sm" 
-        colorScheme="blue"
-        variant="outline"
-        mb={4}
-        mt={1}
-        leftIcon={<ArrowUpDownIcon />}
-      >
-        Sort: {sortConfig.field === 'display_name' ? 'Name' : 
-               sortConfig.field === 'sf_name' ? 'Institution' :
-               sortConfig.field === 'balance' ? 'Balance' :
-               sortConfig.field === 'sf_balance_date' ? 'Date' :
-               sortConfig.field === 'category' ? 'Category' : 'Source'}
-        {' '}
-        {sortConfig.direction === 'asc' ? '(A-Z)' : '(Z-A)'}
-      </MenuButton>
-      <MenuList>
-        <MenuItem onClick={() => handleSort('display_name')}>
-          Name {sortConfig.field === 'display_name' && (
-            sortConfig.direction === 'asc' ? <TriangleUpIcon ml={2} /> : <TriangleDownIcon ml={2} />
-          )}
-        </MenuItem>
-        <MenuItem onClick={() => handleSort('sf_name')}>
-          Institution {sortConfig.field === 'sf_name' && (
-            sortConfig.direction === 'asc' ? <TriangleUpIcon ml={2} /> : <TriangleDownIcon ml={2} />
-          )}
-        </MenuItem>
-        <MenuItem onClick={() => handleSort('balance')}>
-          Balance {sortConfig.field === 'balance' && (
-            sortConfig.direction === 'asc' ? <TriangleUpIcon ml={2} /> : <TriangleDownIcon ml={2} />
-          )}
-        </MenuItem>
-        <MenuItem onClick={() => handleSort('sf_balance_date')}>
-          Date {sortConfig.field === 'sf_balance_date' && (
-            sortConfig.direction === 'asc' ? <TriangleUpIcon ml={2} /> : <TriangleDownIcon ml={2} />
-          )}
-        </MenuItem>
-        <MenuItem onClick={() => handleSort('category')}>
-          Category {sortConfig.field === 'category' && (
-            sortConfig.direction === 'asc' ? <TriangleUpIcon ml={2} /> : <TriangleDownIcon ml={2} />
-          )}
-        </MenuItem>
-        <MenuItem onClick={() => handleSort('source')}>
-          Source {sortConfig.field === 'source' && (
-            sortConfig.direction === 'asc' ? <TriangleUpIcon ml={2} /> : <TriangleDownIcon ml={2} />
-          )}
-        </MenuItem>
-      </MenuList>
-    </Menu>
-  );
+  const MobileSortMenu = () => {
+    // Define sort options
+    const sortOptions: SortOption[] = [
+      { key: 'display_name', label: 'Name' },
+      { key: 'sf_name', label: 'Institution' },
+      { key: 'balance', label: 'Balance' },
+      { key: 'sf_balance_date', label: 'Date' },
+      { key: 'category', label: 'Category' },
+      { key: 'source', label: 'Source' }
+    ];
+    
+    return (
+      <SortMenu
+        options={sortOptions}
+        currentSortKey={sortConfig.field}
+        sortDirection={sortConfig.direction}
+        onSort={(key) => handleSort(key as keyof Account)}
+      />
+    );
+  };
 
   // Get sorted accounts
   const sortedAccounts = sortAccounts(accounts);
+  
+  // Format date for cards
+  const formatDate = (timestamp: string): string => {
+    if (!timestamp) return '';
+    return new Date(parseInt(timestamp) * 1000).toLocaleDateString();
+  };
 
-  // Add a CategoryDisplay component to render in the table
-  const CategoryDisplay = ({ category }: { category?: string | null }) => {
-    const categoryName = category || 'Uncategorized';
-    const categoryColor = getCategoryColor(category, categories).split('.')[0];
-    
+  // Mobile cards using reusable component
+  const renderMobileCards = () => {
     return (
-      <Tag colorScheme={categoryColor} size="sm">
-        {categoryName}
-      </Tag>
+      <SimpleGrid columns={1} spacing={4} mt={4}>
+        {sortedAccounts.map((acc) => {
+          // Create fields for the card
+          const fields: CardField[] = [
+            { 
+              label: 'Institution', 
+              value: acc.sf_name
+            },
+            { 
+              label: 'Balance', 
+              value: <CurrencyDisplay amount={acc.balance} />
+            },
+            { 
+              label: 'Date', 
+              value: formatDate(acc.sf_balance_date)
+            }
+          ];
+          
+          return (
+            <DataCard
+              key={acc.sf_account_id}
+              title={getAccountName(acc)}
+              fields={fields}
+              onClick={() => handleCardClick(acc)}
+            />
+          );
+        })}
+      </SimpleGrid>
     );
   };
 
@@ -895,303 +967,27 @@ const Accounts = () => {
 
           {/* Desktop Table View */}
           <Hide below="md">
-            <Box bg={tableBg} rounded="lg" shadow="md" mt={4} overflow="hidden" borderWidth="1px" borderColor={borderColor}>
-              <Table variant="simple">
-                <Thead bg={headerBg}>
-                  <Tr>
-                    <Th 
-                      color={headerColor} 
-                      fontWeight="bold" 
-                      fontSize="md"
-                      cursor="pointer"
-                      onClick={() => handleSort('display_name')}
-                    >
-                      <Flex align="center">
-                        Name <SortIndicator field="display_name" />
-                      </Flex>
-                    </Th>
-                    <Th 
-                      color={headerColor} 
-                      fontWeight="bold" 
-                      fontSize="md"
-                      cursor="pointer"
-                      onClick={() => handleSort('sf_name')}
-                    >
-                      <Flex align="center">
-                        Institution <SortIndicator field="sf_name" />
-                      </Flex>
-                    </Th>
-                    <Th 
-                      color={headerColor} 
-                      fontWeight="bold" 
-                      fontSize="md" 
-                      isNumeric
-                      cursor="pointer"
-                      onClick={() => handleSort('balance')}
-                    >
-                      <Flex justify="flex-end" align="center">
-                        Balance <SortIndicator field="balance" />
-                      </Flex>
-                    </Th>
-                    <Th 
-                      color={headerColor} 
-                      fontWeight="bold" 
-                      fontSize="md"
-                      cursor="pointer"
-                      onClick={() => handleSort('category')}
-                    >
-                      <Flex align="center">
-                        Category <SortIndicator field="category" />
-                      </Flex>
-                    </Th>
-                    <Th 
-                      color={headerColor} 
-                      fontWeight="bold" 
-                      fontSize="md"
-                      cursor="pointer"
-                      onClick={() => handleSort('sf_balance_date')}
-                    >
-                      <Flex align="center">
-                        Date <SortIndicator field="sf_balance_date" />
-                      </Flex>
-                    </Th>
-                    <Th 
-                      color={headerColor} 
-                      fontWeight="bold" 
-                      fontSize="md"
-                      cursor="pointer"
-                      onClick={() => handleSort('source')}
-                    >
-                      <Flex align="center">
-                        Source <SortIndicator field="source" />
-                      </Flex>
-                    </Th>
-                    <Th width="40px"></Th>
-                  </Tr>
-                </Thead>
-                <Tbody>
-                  {sortedAccounts.map((acc) => (
-                    <>
-                      <Tr 
-                        key={acc.sf_account_id}
-                        _hover={{ bg: hoverBg }}
-                        transition="background-color 0.2s"
-                        cursor="pointer"
-                        onClick={() => handleRowClick(acc.sf_account_id)}
-                      >
-                        <Td fontWeight="medium">{getAccountName(acc)}</Td>
-                        <Td>{acc.sf_name}</Td>
-                        <Td isNumeric>
-                          <BalanceDisplay balance={acc.balance} />
-                        </Td>
-                        <Td>
-                          <CategoryDisplay category={acc.category} />
-                        </Td>
-                        <Td>{acc.sf_balance_date ? new Date(parseInt(acc.sf_balance_date) * 1000).toLocaleDateString() : ''}</Td>
-                        <Td>
-                          <Badge colorScheme={acc.source === 'manual' ? 'purple' : 'blue'}>
-                            {acc.source}
-                          </Badge>
-                        </Td>
-                        <Td>
-                          {expandedRow === acc.sf_account_id ? 
-                            <ChevronUpIcon /> : 
-                            <ChevronDownIcon />
-                          }
-                        </Td>
-                      </Tr>
-                      <Tr>
-                        <Td colSpan={7} p={0}>
-                          <Collapse in={expandedRow === acc.sf_account_id} animateOpacity>
-                            <SlideFade in={expandedRow === acc.sf_account_id} offsetY="20px">
-                              <Box 
-                                bg={expandedBg} 
-                                p={4} 
-                                borderTop="1px solid" 
-                                borderColor={borderColor}
-                                position="relative"
-                              >
-                                <Grid 
-                                  templateColumns="repeat(12, 1fr)" 
-                                  gap={4}
-                                >
-                                  <GridItem colSpan={{ base: 12, lg: 4 }}>
-                                    <Stack spacing={3}>
-                                      <Box>
-                                        <Text fontSize="sm" color={textColor}>Account Name</Text>
-                                        {expandedRow === acc.sf_account_id && isEditing ? (
-                                          <InputGroup>
-                                            <Input 
-                                              value={editedDisplayName}
-                                              onChange={(e) => setEditedDisplayName(e.target.value)}
-                                              fontWeight="bold"
-                                              size="md"
-                                              autoFocus
-                                            />
-                                            <InputRightElement>
-                                              <CheckIcon color="green.500" />
-                                            </InputRightElement>
-                                          </InputGroup>
-                                        ) : (
-                                          <Text fontWeight="bold">{getAccountName(acc)}</Text>
-                                        )}
-                                      </Box>
-                                      
-                                      <Box>
-                                        <Text fontSize="sm" color={textColor}>Institution</Text>
-                                        <Text>{acc.sf_name}</Text>
-                                      </Box>
-                                    </Stack>
-                                  </GridItem>
-                                  
-                                  <GridItem colSpan={{ base: 12, lg: 4 }}>
-                                    <Stack spacing={3}>
-                                      <Box>
-                                        <Text fontSize="sm" color={textColor}>Balance</Text>
-                                        <Text fontSize="xl" fontWeight="bold" color={
-                                          parseFloat(acc.balance) < 0 ? 'red.500' : 
-                                          parseFloat(acc.balance) > 0 ? 'green.500' : textColor
-                                        }>
-                                          {formatCurrency(parseFloat(acc.balance))}
-                                        </Text>
-                                      </Box>
-                                      
-                                      <Box>
-                                        <Text fontSize="sm" color={textColor}>Category</Text>
-                                        {expandedRow === acc.sf_account_id && isEditing ? (
-                                          renderCategoryTree()
-                                        ) : (
-                                          <CategoryDisplay category={acc.category} />
-                                        )}
-                                      </Box>
-                                    </Stack>
-                                  </GridItem>
-                                  
-                                  <GridItem colSpan={{ base: 12, lg: 4 }}>
-                                    <Box p={3} bg={sectionBg} borderRadius="md" height="100%">
-                                      <Text fontSize="sm" fontWeight="bold" color={textColor} mb={2}>
-                                        Technical Details
-                                      </Text>
-                                      <Stack spacing={2}>
-                                        <Box>
-                                          <Text fontSize="xs" color={textColor}>ID:</Text>
-                                          <Text fontSize="xs" fontFamily="monospace" overflowX="auto">
-                                            {acc.sf_account_id}
-                                          </Text>
-                                        </Box>
-                                        
-                                        {acc.sf_account_name && (
-                                          <Box>
-                                            <Text fontSize="xs" color={textColor}>Original Name:</Text>
-                                            <Text fontSize="xs" fontFamily="monospace" overflowX="auto">
-                                              {acc.sf_account_name}
-                                            </Text>
-                                          </Box>
-                                        )}
-                                        
-                                        <Box>
-                                          <Text fontSize="xs" color={textColor}>Source:</Text>
-                                          <Badge colorScheme={acc.source === 'manual' ? 'purple' : 'blue'} fontSize="xs">
-                                            {acc.source}
-                                          </Badge>
-                                        </Box>
-                                        
-                                        <Box>
-                                          <Text fontSize="xs" color={textColor}>Unix Timestamp:</Text>
-                                          <Text fontSize="xs" fontFamily="monospace">
-                                            {acc.sf_balance_date || 'N/A'}
-                                          </Text>
-                                        </Box>
-                                      </Stack>
-                                    </Box>
-                                  </GridItem>
-                                </Grid>
-                                
-                                {/* Edit button for desktop moved to bottom left */}
-                                <Flex mt={4} borderTop="1px dashed" borderColor={borderColor} pt={3}>
-                                  <IconButton
-                                    aria-label="Edit account"
-                                    icon={isEditing ? <CheckIcon /> : <EditIcon />}
-                                    size="sm"
-                                    colorScheme={isEditing ? "green" : "blue"}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (expandedRow === acc.sf_account_id) {
-                                        setSelectedAccount(acc);
-                                        setEditedDisplayName(getAccountName(acc));
-                                        toggleEditMode();
-                                      }
-                                    }}
-                                  />
-                                  <Spacer />
-                                </Flex>
-                              </Box>
-                            </SlideFade>
-                          </Collapse>
-                        </Td>
-                      </Tr>
-                    </>
-                  ))}
-                  <Tr 
-                    _hover={{ bg: hoverBg, cursor: 'pointer' }}
-                    onClick={onOpen}
-                    bg={useColorModeValue('gray.50', 'gray.700')}
-                  >
-                    <Td colSpan={7}>
-                      <Flex alignItems="center" justifyContent="center" py={2}>
-                        <AddIcon mr={2} />
-                        <Text fontWeight="medium">Add New Account</Text>
-                      </Flex>
-                    </Td>
-                  </Tr>
-                </Tbody>
-              </Table>
-            </Box>
+            <DataTable 
+              data={sortedAccounts}
+              columns={tableColumns}
+              keyField="sf_account_id"
+              sortConfig={sortConfig}
+              onSort={handleSort}
+              onRowClick={(account) => handleRowClick(account.sf_account_id)}
+              expandedRow={expandedRow}
+              renderExpandedContent={renderExpandedContent}
+              addItemRow={
+                <Flex alignItems="center" justifyContent="center" py={2}>
+                  <AddIcon mr={2} />
+                  <Text fontWeight="medium">Add New Account</Text>
+                </Flex>
+              }
+            />
           </Hide>
 
           {/* Mobile Card View */}
           <Show below="md">
-            <SimpleGrid columns={1} spacing={4} mt={4}>
-              {sortedAccounts.map((acc) => (
-                <Card 
-                  key={acc.sf_account_id} 
-                  bg={cardBg} 
-                  shadow="md" 
-                  borderRadius="lg" 
-                  overflow="hidden"
-                  onClick={() => handleCardClick(acc)}
-                  cursor="pointer"
-                  _hover={{ transform: 'translateY(-2px)', shadow: 'lg' }}
-                  transition="all 0.2s"
-                >
-                  <CardHeader bg={headerBg} py={3} px={4}>
-                    <Flex justifyContent="space-between" alignItems="center">
-                      <Text fontWeight="bold" color={headerColor} isTruncated maxW="70%">
-                        {getAccountName(acc)}
-                      </Text>
-                    </Flex>
-                  </CardHeader>
-                  <CardBody py={3} px={4}>
-                    <Stack spacing={2}>
-                      <Flex justify="space-between">
-                        <Text fontSize="sm" color={textColor}>Institution:</Text>
-                        <Text fontSize="sm" fontWeight="medium">{acc.sf_name}</Text>
-                      </Flex>
-                      <Flex justify="space-between">
-                        <Text fontSize="sm" color={textColor}>Balance:</Text>
-                        <BalanceDisplay balance={acc.balance} />
-                      </Flex>
-                      <Flex justify="space-between">
-                        <Text fontSize="sm" color={textColor}>Date:</Text>
-                        <Text fontSize="sm">
-                          {acc.sf_balance_date ? new Date(parseInt(acc.sf_balance_date) * 1000).toLocaleDateString() : ''}
-                        </Text>
-                      </Flex>
-                    </Stack>
-                  </CardBody>
-                </Card>
-              ))}
-            </SimpleGrid>
+            {renderMobileCards()}
           </Show>
         </>
       )}

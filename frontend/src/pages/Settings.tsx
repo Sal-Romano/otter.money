@@ -128,7 +128,7 @@ const Settings = () => {
 
       try {
         const { data, error } = await supabase
-          .from('user_settings')
+          .from('om_user_settings')
           .select('*')
           .eq('id', user.id)
           .single()
@@ -182,7 +182,7 @@ const Settings = () => {
             
             // Save default categories
             const { error: upsertError } = await supabase
-              .from('user_settings')
+              .from('om_user_settings')
               .upsert({
                 id: user.id,
                 dark_mode: data?.dark_mode ?? null,
@@ -210,7 +210,7 @@ const Settings = () => {
           };
           
           const { error: upsertError } = await supabase
-            .from('user_settings')
+            .from('om_user_settings')
             .upsert({
               id: user.id,
               dark_mode: null,
@@ -258,7 +258,7 @@ const Settings = () => {
     // Save to database
     try {
       const { error } = await supabase
-        .from('user_settings')
+        .from('om_user_settings')
         .upsert({
           id: user.id,
           dark_mode: newMode === 'system' ? null : newMode === 'dark',
@@ -372,7 +372,7 @@ const Settings = () => {
 
     try {
       const { error } = await supabase
-        .from('user_settings')
+        .from('om_user_settings')
         .update({
           categories: updatedCategories,
           updated_at: new Date().toISOString()
@@ -546,7 +546,7 @@ const Settings = () => {
 
     try {
       const { error } = await supabase
-        .from('user_settings')
+        .from('om_user_settings')
         .update({
           categories: updatedCategories,
           updated_at: new Date().toISOString()
@@ -606,7 +606,7 @@ const Settings = () => {
 
     try {
       const { error } = await supabase
-        .from('user_settings')
+        .from('om_user_settings')
         .update({
           categories: updatedCategories,
           updated_at: new Date().toISOString()

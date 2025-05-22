@@ -14,7 +14,7 @@ export const ColorModeProvider = ({ children }: { children: React.ReactNode }) =
       if (!user) return
 
       const { data, error } = await supabase
-        .from('user_settings')
+        .from('om_user_settings')
         .select('dark_mode')
         .single()
 
@@ -40,7 +40,7 @@ export const ColorModeProvider = ({ children }: { children: React.ReactNode }) =
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
     const handleChange = async () => {
       const { data } = await supabase
-        .from('user_settings')
+        .from('om_user_settings')
         .select('dark_mode')
         .single()
 
