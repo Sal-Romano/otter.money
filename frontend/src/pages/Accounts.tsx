@@ -13,7 +13,6 @@ import {
 } from '@chakra-ui/icons'
 import { useEffect, useState, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import axios from 'axios'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import ScrollableArea, { scrollbarStyle } from '../components/ScrollableArea'
@@ -43,14 +42,15 @@ const getAccountName = (account: Account): string => {
   return account.display_name || account.sf_account_name || 'Unnamed Account';
 };
 
-// Fetch accounts function for React Query
-const fetchUserAccounts = async (jwt: string): Promise<Account[]> => {
-  const response = await axios.get('/api/v1/user_accounts', {
-    headers: {
-      Authorization: `Bearer ${jwt}`
-    }
-  });
-  return response.data.accounts || [];
+// Fetch accounts function for React Query - Direct Supabase access
+const fetchUserAccounts = async (): Promise<Account[]> => {
+  const { data, error } = await supabase
+    .from('om_user_accounts')
+    .select('*')
+    .order('balance', { ascending: false }); // Default sort by balance descending
+    
+  if (error) throw error;
+  return data || [];
 };
 
 const Accounts = () => {
@@ -194,11 +194,11 @@ const Accounts = () => {
     }
   };
 
-  // Use React Query for data fetching with caching
+  // Use React Query for data fetching with caching - Direct Supabase access
   const { data: accounts = [], isLoading, error: queryError, refetch } = useQuery({
     queryKey: ['userAccounts', user?.id],
-    queryFn: () => session?.access_token ? fetchUserAccounts(session.access_token) : Promise.resolve([]),
-    enabled: !!user && !!session?.access_token,
+    queryFn: fetchUserAccounts,
+    enabled: !!user,
     staleTime: 5 * 60 * 1000, // Data considered fresh for 5 minutes
     gcTime: 10 * 60 * 1000, // Keep data in cache for 10 minutes (previously called cacheTime)
     refetchOnWindowFocus: false, 
@@ -209,13 +209,13 @@ const Accounts = () => {
     setForm({ ...form, [e.target.name]: e.target.value })
   }
 
-  // In the handleAddAccount function, add display_name and set sf_account_name to null for manual accounts
+  // Add account directly via Supabase
   const handleAddAccount = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!user || !session) return
+    if (!user) return
     setAdding(true)
     try {
-      // Add account directly via API
+      // Add account directly via Supabase
       const newAccount = {
         sf_account_id: `manual-${Date.now()}-${Math.floor(Math.random() * 10000)}`, // Generate a unique ID
         sf_account_name: null, // Set to null for manual accounts
@@ -223,14 +223,15 @@ const Accounts = () => {
         sf_name: form.sf_name,
         balance: form.balance || '0',
         sf_balance_date: form.sf_balance_date ? Math.floor(new Date(form.sf_balance_date).getTime() / 1000) : Math.floor(Date.now() / 1000),
-        source: 'manual'
+        source: 'manual',
+        user_id: user.id // RLS will ensure this is set correctly
       }
       
-      await axios.post(`/api/v1/user_accounts?user_id=${user.id}`, newAccount, {
-        headers: { 
-          Authorization: `Bearer ${session.access_token}` 
-        }
-      })
+      const { error } = await supabase
+        .from('om_user_accounts')
+        .insert([newAccount]);
+      
+      if (error) throw error;
       
       // Refresh accounts list
       refetch();
