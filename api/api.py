@@ -30,7 +30,7 @@ app = FastAPI()
 
 def get_table(table_name: str):
     # Use public_ottermoney schema explicitly
-    return supabase.schema("public_ottermoney").table(table_name)
+    return supabase.schema("public").table(table_name)
 
 def verify_jwt(token: str):
     try:
@@ -72,7 +72,7 @@ def get_accounts(
         raise HTTPException(status_code=401, detail="Missing or invalid API key or JWT")
 
     # Lookup user in Supabase
-    user_resp = get_table("user_simplefin_tokens").select("simplefin_token, user_id").eq("user_id", user_id).single().execute()
+    user_resp = get_table("om_user_simplefin_tokens").select("simplefin_token, user_id").eq("user_id", user_id).single().execute()
     if not user_resp.data or not user_resp.data.get("simplefin_token"):
         logging.error(f"User or token not found for user_id={user_id}")
         raise HTTPException(status_code=404, detail="User or token not found")
@@ -107,11 +107,11 @@ def upsert_user_accounts(user_id: str, accounts: List[dict], source: str = "simp
         })
     # Upsert into user_accounts
     try:
-        resp = get_table("user_accounts").upsert(upsert_data, on_conflict="user_id,sf_account_id").execute()
+        resp = get_table("om_user_accounts").upsert(upsert_data, on_conflict="user_id,sf_account_id").execute()
         logging.info(f"Successfully upserted accounts for user_id={user_id}")
         return resp
     except Exception as e:
-        logging.error(f"Error upserting user_accounts: {str(e)}")
+        logging.error(f"Error upserting om_user_accounts: {str(e)}")
         raise e
 
 @app.get("/api/v1/user_accounts")
@@ -137,12 +137,12 @@ def get_user_accounts(
         raise HTTPException(status_code=401, detail="Missing or invalid API key or JWT")
 
     # Always return all accounts from user_accounts
-    resp = get_table("user_accounts").select("sf_account_id, sf_account_name, sf_name, balance, sf_balance_date, category, display_name, source").eq("user_id", user_id).execute()
+    resp = get_table("om_user_accounts").select("sf_account_id, sf_account_name, sf_name, balance, sf_balance_date, category, display_name, source").eq("user_id", user_id).execute()
     if resp.data and len(resp.data) > 0:
         return {"accounts": resp.data}
 
     # If not cached, fetch from SimpleFIN and cache
-    user_resp = get_table("user_simplefin_tokens").select("simplefin_token, user_id").eq("user_id", user_id).single().execute()
+    user_resp = get_table("om_user_simplefin_tokens").select("simplefin_token, user_id").eq("user_id", user_id).single().execute()
     if not user_resp.data or not user_resp.data.get("simplefin_token"):
         raise HTTPException(status_code=404, detail="User or token not found")
     access_url = user_resp.data["simplefin_token"]
@@ -155,7 +155,7 @@ def get_user_accounts(
         accounts = resp_sf.json().get("accounts", [])
         upsert_user_accounts(user_id, accounts, source="simplefin-bridge")
         # Return the upserted data
-        resp = get_table("user_accounts").select("sf_account_id, sf_account_name, sf_name, balance, sf_balance_date, category, display_name,source").eq("user_id", user_id).execute()
+        resp = get_table("om_user_accounts").select("sf_account_id, sf_account_name, sf_name, balance, sf_balance_date, category, display_name,source").eq("user_id", user_id).execute()
         return {"accounts": resp.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
