@@ -13,7 +13,7 @@ import {
   Legend, 
   Tooltip
 } from 'recharts'
-import { CategoryStructure, getCategoryColor } from './CategoryManager'
+import { CategoryStructure, getCategoryColor } from './categories/CategorySetter'
 
 // Define interface for account objects
 interface Account {

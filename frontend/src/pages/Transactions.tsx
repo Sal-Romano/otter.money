@@ -16,13 +16,13 @@ import {
 } from '@chakra-ui/react'
 import { AddIcon } from '@chakra-ui/icons'
 import { useState } from 'react'
-import { useAuth } from '../contexts/AuthContext'
+// import { useAuth } from '../contexts/AuthContext' // Will be needed when implementing actual transactions
 import { useQuery } from '@tanstack/react-query'
 import DataTable from '../components/DataTable'
 import DataCard from '../components/DataCard'
 import CurrencyDisplay from '../components/CurrencyDisplay'
 import SortMenu from '../components/SortMenu'
-import { CategoryDisplay } from '../components/CategoryManager'
+import { CategoryDisplay } from '../components/categories/CategorySetter'
 
 // Placeholder for transactions data type
 interface Transaction {
@@ -39,7 +39,7 @@ const Transactions = () => {
   const borderColor = useColorModeValue('gray.200', 'gray.600')
   const isMobile = useBreakpointValue({ base: true, md: false })
   
-  const { user, session } = useAuth()
+  // const { user, session } = useAuth() // Will be needed when implementing actual transactions
   
   // State for sorting
   const [sortConfig, setSortConfig] = useState({
@@ -50,15 +50,15 @@ const Transactions = () => {
   // Placeholder for data
   const transactions: Transaction[] = []
   
-  // Placeholder for query
-  const { isLoading, error } = useQuery({
-    queryKey: ['transactions'],
-    queryFn: async () => {
-      // This will be implemented later
-      return []
-    },
-    enabled: false // Disable for now
-  })
+  // Placeholder for query - will be implemented when building out transactions
+  // const { isLoading, error } = useQuery({
+  //   queryKey: ['transactions'],
+  //   queryFn: async () => {
+  //     // This will be implemented later
+  //     return []
+  //   },
+  //   enabled: false // Disable for now
+  // })
   
   // Handle sorting
   const handleSort = (field: keyof Transaction) => {
@@ -106,7 +106,8 @@ const Transactions = () => {
           categoryStructure={{ 
             account_categories: [], 
             transaction_categories: [] 
-          }} 
+          }}
+          categoryType="transaction"
         />
       )
     }
@@ -120,8 +121,8 @@ const Transactions = () => {
     { key: 'category', label: 'Category' }
   ]
 
-  if (isLoading) return <Spinner />
-  if (error) return <Alert status="error"><AlertIcon />{(error as Error).message}</Alert>
+  // if (isLoading) return <Spinner />
+  // if (error) return <Alert status="error"><AlertIcon />{(error as Error).message}</Alert>
 
   return (
     <Box position="relative" pb={16}>
@@ -187,7 +188,8 @@ const Transactions = () => {
                           categoryStructure={{ 
                             account_categories: [], 
                             transaction_categories: [] 
-                          }} 
+                          }}
+                          categoryType="transaction"
                         />
                       ) 
                     }

@@ -7,7 +7,7 @@ import {
   FormControl,
   useColorModeValue
 } from '@chakra-ui/react'
-import ScrollableArea from './ScrollableArea'
+import ScrollableArea from '../ScrollableArea'
 
 // Types for categories
 export interface Category {
@@ -22,15 +22,20 @@ export interface CategoryStructure {
 }
 
 // Function to get category color from structure
-export const getCategoryColor = (categoryName: string | undefined | null, categoryStructure: CategoryStructure): string => {
+export const getCategoryColor = (categoryName: string | undefined | null, categoryStructure: CategoryStructure, categoryType: 'account' | 'transaction' = 'account'): string => {
   if (!categoryName) return 'red.500'; // Default for "Uncategorized"
   
-  // Check in top-level account categories
-  const category = categoryStructure.account_categories.find(cat => cat.name === categoryName);
+  // Determine which category list to search based on type
+  const categoryList = categoryType === 'account' 
+    ? categoryStructure.account_categories 
+    : categoryStructure.transaction_categories;
+  
+  // Check in top-level categories
+  const category = categoryList.find(cat => cat.name === categoryName);
   if (category) return category.color;
   
   // Check in subcategories
-  for (const parentCat of categoryStructure.account_categories) {
+  for (const parentCat of categoryList) {
     if (parentCat.subcategories) {
       const subcat = parentCat.subcategories.find(sub => sub.name === categoryName);
       if (subcat) return subcat.color;
@@ -43,6 +48,7 @@ export const getCategoryColor = (categoryName: string | undefined | null, catego
 interface CategoryDisplayProps {
   categoryName?: string | null;
   categoryStructure: CategoryStructure;
+  categoryType?: 'account' | 'transaction';
   size?: 'sm' | 'md' | 'lg';
 }
 
@@ -52,16 +58,18 @@ interface CategorySelectorProps {
   onSelectCategory: (categoryName: string | null) => void;
   categoryType?: 'account' | 'transaction';
   maxHeight?: string;
+  placeholder?: string;
 }
 
 // Component to display a category tag
 const CategoryDisplay = ({ 
   categoryName, 
   categoryStructure, 
+  categoryType = 'account',
   size = 'sm' 
 }: CategoryDisplayProps) => {
   const displayName = categoryName || 'Uncategorized';
-  const colorScheme = getCategoryColor(categoryName, categoryStructure).split('.')[0];
+  const colorScheme = getCategoryColor(categoryName, categoryStructure, categoryType).split('.')[0];
   
   return (
     <Tag colorScheme={colorScheme} size={size}>
@@ -70,13 +78,14 @@ const CategoryDisplay = ({
   );
 };
 
-// Component to select a category
+// Component to select/set a category
 const CategorySelector = ({
   categoryStructure,
   selectedCategory,
   onSelectCategory,
   categoryType = 'account',
-  maxHeight = '300px'
+  maxHeight = '300px',
+  placeholder = 'Select a category'
 }: CategorySelectorProps) => {
   const categoryList = categoryType === 'account' 
     ? categoryStructure.account_categories 
@@ -141,5 +150,5 @@ const CategorySelector = ({
   );
 };
 
-// Export all components
+// Export all components and utilities
 export { CategorySelector, CategoryDisplay }; 

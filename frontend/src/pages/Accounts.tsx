@@ -19,7 +19,7 @@ import ScrollableArea, { scrollbarStyle } from '../components/ScrollableArea'
 import DataTable, { SortConfig, SortDirection } from '../components/DataTable'
 import DataCard, { CardField } from '../components/DataCard'
 import CurrencyDisplay, { formatCurrency } from '../components/CurrencyDisplay'
-import { CategoryDisplay, CategorySelector, CategoryStructure, Category, getCategoryColor } from '../components/CategoryManager'
+import { CategoryDisplay, CategorySelector, CategoryStructure, Category, getCategoryColor } from '../components/categories/CategorySetter'
 import SortMenu, { SortOption } from '../components/SortMenu'
 
 // Type for account object from om_user_accounts table
