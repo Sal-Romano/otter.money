@@ -20,6 +20,7 @@ frontend/.pnp.js
 frontend/coverage
 frontend/dist
 frontend/build
+frontend/public/bank_logos
 
 # IDE
 .idea/
