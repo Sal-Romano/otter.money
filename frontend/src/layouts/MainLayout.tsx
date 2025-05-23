@@ -23,12 +23,23 @@ const MainLayout = ({ children }: MainLayoutProps) => {
         borderBottom="1px"
         borderColor={borderColor}
         w="100%"
-        h="16"
         alignItems="center"
         px={{ base: 4, md: 8 }}
         zIndex="sticky"
+        paddingTop="env(safe-area-inset-top)"
+        minHeight="calc(4rem + env(safe-area-inset-top))"
+        _before={{
+          content: '""',
+          position: 'absolute',
+          top: 'calc(-1 * env(safe-area-inset-top))',
+          left: 0,
+          right: 0,
+          height: 'env(safe-area-inset-top)',
+          bg: bg,
+          zIndex: -1,
+        }}
       >
-        <Container maxW="container.xl" display="flex" alignItems="center" justifyContent="space-between">
+        <Container maxW="container.xl" display="flex" alignItems="center" justifyContent="space-between" height="16">
           <Link to="/">
             <Flex alignItems="center">
               <Image src="/logo.png" alt="Otter Money Logo" boxSize="45px" mr={2} />
