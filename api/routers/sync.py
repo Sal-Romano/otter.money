@@ -68,6 +68,33 @@ async def get_accounts(
     if not user_id:
         raise HTTPException(status_code=400, detail="user_id is required")
     
+    # Check cooldown for JWT requests (not API key requests)
+    is_jwt_request = authorization and authorization.startswith("Bearer ")
+    if is_jwt_request:
+        try:
+            # Check last sync time
+            settings_resp = get_table("om_user_settings").select("sf_last_sync").eq("id", user_id).single().execute()
+            if settings_resp.data and settings_resp.data.get("sf_last_sync"):
+                last_sync = datetime.fromisoformat(settings_resp.data["sf_last_sync"].replace('Z', '+00:00'))
+                now = datetime.utcnow().replace(tzinfo=last_sync.tzinfo)
+                time_since_sync = now - last_sync
+                cooldown_minutes = 15
+                
+                if time_since_sync.total_seconds() < (cooldown_minutes * 60):
+                    remaining_seconds = (cooldown_minutes * 60) - time_since_sync.total_seconds()
+                    remaining_minutes = int(remaining_seconds // 60)
+                    remaining_secs = int(remaining_seconds % 60)
+                    
+                    return {
+                        "status": "cooldown",
+                        "message": f"SimpleFIN sync is on cooldown. Please wait {remaining_minutes}m {remaining_secs}s before syncing again.",
+                        "cooldown_remaining_seconds": int(remaining_seconds),
+                        "last_sync": settings_resp.data["sf_last_sync"]
+                    }
+        except Exception as e:
+            logging.warning(f"Error checking cooldown for user {user_id}: {str(e)}")
+            # Continue with sync if cooldown check fails
+    
     # Lookup user's SimpleFIN token from database
     try:
         user_resp = get_table("om_user_simplefin_tokens").select("simplefin_token, user_id").eq("user_id", user_id).single().execute()

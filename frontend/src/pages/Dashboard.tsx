@@ -16,12 +16,14 @@ import {
   StatLabel,
   StatNumber,
   StatHelpText,
-  Divider
+  Divider,
+  Tooltip,
+  useToast
 } from '@chakra-ui/react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { useAuth } from '../contexts/AuthContext'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import CategoryPieChart from '../components/CategoryPieChart'
 import { CategoryStructure } from '../components/CategoryManager'
@@ -61,6 +63,8 @@ const Dashboard = () => {
   const jwt = session?.access_token;
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  const [isInCooldown, setIsInCooldown] = useState<boolean>(false);
+  const toast = useToast();
   
   // Color scheme consistent with Accounts page
   const cardBg = useColorModeValue('white', 'gray.700');
@@ -126,6 +130,16 @@ const Dashboard = () => {
   // Get the categories from user settings or use default
   const categories = userSettings?.categories || defaultCategories;
 
+  // Reset cooldown visual state after delay
+  useEffect(() => {
+    if (isInCooldown) {
+      const timer = setTimeout(() => {
+        setIsInCooldown(false);
+      }, 30000); // Reset visual state after 30 seconds
+      return () => clearTimeout(timer);
+    }
+  }, [isInCooldown]);
+
   const { mutate: refreshAccounts, isPending: refreshing } = useMutation({
     mutationFn: async () => {
       setError(null);
@@ -134,16 +148,46 @@ const Dashboard = () => {
         return;
       }
       try {
-        // Fetch fresh data from API
-        await axios.get('/api/v1/accounts', {
+        // Use sync endpoint instead of accounts endpoint
+        const response = await axios.get('/api/v1/sync/', {
           headers: {
             Authorization: `Bearer ${jwt}`
           }
         });
-        // Invalidate query to refresh the UI
+        
+        // Check if response indicates cooldown
+        if (response.data.status === 'cooldown') {
+          setIsInCooldown(true);
+          toast({
+            title: 'Sync Cooldown Active',
+            description: response.data.message,
+            status: 'warning',
+            duration: 6000,
+            isClosable: true,
+          });
+          return;
+        }
+        
+        // If successful sync, reset cooldown state and invalidate queries
+        setIsInCooldown(false);
         queryClient.invalidateQueries({ queryKey: ['userAccounts', userId] });
+        toast({
+          title: 'Accounts Synced',
+          description: 'Successfully refreshed account data from SimpleFIN',
+          status: 'success',
+          duration: 3000,
+          isClosable: true,
+        });
       } catch (err: any) {
-        setError(err?.response?.data?.error || err.message || 'Failed to refresh accounts.');
+        const errorMessage = err?.response?.data?.detail || err.message || 'Failed to refresh accounts.';
+        setError(errorMessage);
+        toast({
+          title: 'Sync Failed',
+          description: errorMessage,
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+        });
       }
     }
   });
@@ -210,14 +254,28 @@ const Dashboard = () => {
         <Box>
           <Flex justify="space-between" align="center" mb={4}>
             <Text fontSize="lg" fontWeight="bold" color={headerColor}>Financial Overview</Text>
-            <Button 
-              onClick={() => refreshAccounts()} 
-              isLoading={refreshing} 
-              colorScheme="blue" 
-              size="sm"
+            <Tooltip 
+              label={
+                isInCooldown 
+                  ? 'Recently synced. Please wait before syncing again.'
+                  : refreshing 
+                    ? 'Syncing accounts...'
+                    : 'Sync accounts with SimpleFIN'
+              }
+              placement="top"
             >
-              Refresh
-            </Button>
+              <Button 
+                onClick={() => refreshAccounts()} 
+                isLoading={refreshing} 
+                colorScheme={isInCooldown ? "gray" : "blue"}
+                size="sm"
+                opacity={isInCooldown ? 0.5 : 1}
+                cursor={isInCooldown ? "not-allowed" : "pointer"}
+                _hover={isInCooldown ? {} : undefined}
+              >
+                Refresh
+              </Button>
+            </Tooltip>
           </Flex>
           
           <Grid 
