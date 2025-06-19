@@ -9,7 +9,7 @@ import {
 } from '@chakra-ui/react'
 import { 
   AddIcon, ChevronDownIcon, ChevronUpIcon, EditIcon, CheckIcon,
-  TriangleUpIcon, TriangleDownIcon, ArrowUpDownIcon, CloseIcon
+  TriangleUpIcon, TriangleDownIcon, ArrowUpDownIcon, CloseIcon, ViewOffIcon, ViewIcon
 } from '@chakra-ui/icons'
 import { useEffect, useState, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext'
@@ -21,6 +21,7 @@ import DataCard, { CardField } from '../components/DataCard'
 import CurrencyDisplay, { formatCurrency } from '../components/CurrencyDisplay'
 import { CategoryDisplay, CategorySelector, CategoryStructure, Category, getCategoryColor } from '../components/categories/CategorySetter'
 import SortMenu, { SortOption } from '../components/SortMenu'
+import axios from 'axios'
 
 // Type for account object from om_user_accounts table
 interface Account {
@@ -32,6 +33,7 @@ interface Account {
   sf_balance_date: string;
   source: string;
   category?: string | null;
+  hidden: boolean;
 }
 
 // For sorting data
@@ -224,7 +226,8 @@ const Accounts = () => {
         balance: form.balance || '0',
         sf_balance_date: form.sf_balance_date ? Math.floor(new Date(form.sf_balance_date).getTime() / 1000) : Math.floor(Date.now() / 1000),
         source: 'manual',
-        user_id: user.id // RLS will ensure this is set correctly
+        user_id: user.id, // RLS will ensure this is set correctly
+        hidden: false
       }
       
       const { error } = await supabase
@@ -315,7 +318,7 @@ const Accounts = () => {
     setIsEditing(!isEditing);
   };
 
-  // Sorting function - update to use display_name and add category
+  // Fix sortAccounts to ensure only strings are passed to localeCompare
   const sortAccounts = (accounts: Account[]): Account[] => {
     const { field, direction } = sortConfig;
     return [...accounts].sort((a, b) => {
@@ -325,14 +328,12 @@ const Accounts = () => {
         const bVal = parseFloat(b[field] || '0');
         return direction === 'asc' ? aVal - bVal : bVal - aVal;
       }
-      
       // Special case for date which needs to be parsed from UNIX timestamp
       if (field === 'sf_balance_date') {
         const aVal = parseInt(a[field] || '0');
         const bVal = parseInt(b[field] || '0');
         return direction === 'asc' ? aVal - bVal : bVal - aVal;
       }
-      
       // Special case for display_name with fallback
       if (field === 'display_name') {
         const aVal = getAccountName(a);
@@ -341,19 +342,17 @@ const Accounts = () => {
           ? aVal.localeCompare(bVal) 
           : bVal.localeCompare(aVal);
       }
-      
       // Special case for category which might be undefined or null
       if (field === 'category') {
-        const aVal = a[field] || 'Uncategorized';
-        const bVal = b[field] || 'Uncategorized';
+        const aVal = typeof a[field] === 'string' ? a[field] as string : 'Uncategorized';
+        const bVal = typeof b[field] === 'string' ? b[field] as string : 'Uncategorized';
         return direction === 'asc' 
           ? aVal.localeCompare(bVal) 
           : bVal.localeCompare(aVal);
       }
-      
       // General case for string fields
-      const aVal = a[field] || '';
-      const bVal = b[field] || '';
+      const aVal = typeof a[field] === 'string' ? a[field] as string : '';
+      const bVal = typeof b[field] === 'string' ? b[field] as string : '';
       return direction === 'asc' 
         ? aVal.localeCompare(bVal) 
         : bVal.localeCompare(aVal);
@@ -665,19 +664,27 @@ const Accounts = () => {
 
         {/* Edit floating button - Note increased zIndex and portal usage */}
         <Portal>
-          <IconButton
-            aria-label="Edit account"
-            icon={isEditing ? <CheckIcon /> : <EditIcon />}
-            size="lg"
-            colorScheme={isEditing ? "green" : "blue"}
-            borderRadius="full"
-            position="fixed"
-            bottom="4"
-            right="4"
-            shadow="lg"
-            onClick={toggleEditMode}
-            zIndex={2000} // Higher than modal's zIndex
-          />
+          <HStack spacing={2} position="fixed" bottom="4" right="4" zIndex={2000}>
+            <IconButton
+              aria-label={selectedAccount?.hidden ? "Unhide account" : "Hide account"}
+              icon={selectedAccount?.hidden ? <ViewIcon /> : <ViewOffIcon />}
+              size="lg"
+              colorScheme={selectedAccount?.hidden ? "green" : "red"}
+              borderRadius="full"
+              onClick={() => {
+                setHideTargetAccount(selectedAccount);
+                setShowHideModal(true);
+              }}
+            />
+            <IconButton
+              aria-label="Edit account"
+              icon={isEditing ? <CheckIcon /> : <EditIcon />}
+              size="lg"
+              colorScheme={isEditing ? "green" : "blue"}
+              borderRadius="full"
+              onClick={toggleEditMode}
+            />
+          </HStack>
         </Portal>
       </Modal>
     );
@@ -737,9 +744,19 @@ const Accounts = () => {
     }
   ];
 
-  // Render desktop expanded content
+  // Add showHidden state
+  const [showHidden, setShowHidden] = useState(false);
+
+  // Theme-aware background for hidden rows
+  const rowBgHidden = useColorModeValue('gray.100', 'gray.700');
+
+  // Compose the accounts to show in the table, then sort/filter
+  const filteredAccounts = showHidden ? accounts : accounts.filter(acc => !acc.hidden);
+  const sortedAccounts = sortAccounts(filteredAccounts);
+
+  // Update renderExpandedContent to include hide/unhide button for desktop
   const renderExpandedContent = (account: Account) => (
-    <Grid templateColumns="repeat(12, 1fr)" gap={4}>
+    <Grid templateColumns="repeat(12, 1fr)" gap={4} bg={account.hidden ? rowBgHidden : undefined}>
       <GridItem colSpan={{ base: 12, lg: 4 }}>
         <Stack spacing={3}>
           <Box>
@@ -839,20 +856,32 @@ const Accounts = () => {
 
       <GridItem colSpan={12}>
         <Flex mt={4} borderTop="1px dashed" borderColor={borderColor} pt={3}>
-          <IconButton
-            aria-label="Edit account"
-            icon={isEditing ? <CheckIcon /> : <EditIcon />}
-            size="sm"
-            colorScheme={isEditing ? "green" : "blue"}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (expandedRow === account.sf_account_id) {
+          <HStack spacing={2}>
+            <IconButton
+              aria-label={account.hidden ? "Unhide account" : "Hide account"}
+              icon={account.hidden ? <ViewIcon /> : <ViewOffIcon />}
+              size="sm"
+              colorScheme={account.hidden ? "green" : "red"}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedAccount(account);
+                setHideTargetAccount(account);
+                setShowHideModal(true);
+              }}
+            />
+            <IconButton
+              aria-label="Edit account"
+              icon={isEditing ? <CheckIcon /> : <EditIcon />}
+              size="sm"
+              colorScheme={isEditing ? "green" : "blue"}
+              onClick={(e) => {
+                e.stopPropagation();
                 setSelectedAccount(account);
                 setEditedDisplayName(getAccountName(account));
                 toggleEditMode();
-              }
-            }}
-          />
+              }}
+            />
+          </HStack>
           <Spacer />
         </Flex>
       </GridItem>
@@ -902,9 +931,6 @@ const Accounts = () => {
     );
   };
 
-  // Get sorted accounts
-  const sortedAccounts = sortAccounts(accounts);
-  
   // Format date for cards
   const formatDate = (timestamp: string): string => {
     if (!timestamp) return '';
@@ -931,18 +957,70 @@ const Accounts = () => {
               value: formatDate(acc.sf_balance_date)
             }
           ];
-          
+          // If hidden, add Unhide button as a field
+          if (acc.hidden) {
+            fields.push({
+              label: '',
+              value: (
+                <Button leftIcon={<ViewIcon />} colorScheme="green" size="sm" onClick={e => { e.stopPropagation(); handleHideAccount(acc, false); }}>
+                  Unhide
+                </Button>
+              )
+            });
+          }
           return (
-            <DataCard
-              key={acc.sf_account_id}
-              title={getAccountName(acc)}
-              fields={fields}
-              onClick={() => handleCardClick(acc)}
-            />
+            <Box key={acc.sf_account_id} bg={acc.hidden ? rowBgHidden : undefined} borderRadius="md">
+              <DataCard
+                title={getAccountName(acc)}
+                fields={fields}
+                onClick={() => handleCardClick(acc)}
+              />
+            </Box>
           );
         })}
       </SimpleGrid>
     );
+  };
+
+  // Add API call for hiding/unhiding accounts
+  const hideAccountApi = async (accountId: string, hidden: boolean, accessToken: string) => {
+    const url = `/api/v1/user_accounts/${accountId}/hide?hidden=${hidden}`;
+    await axios.patch(url, {}, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+  };
+
+  // State for hide modal
+  const [showHideModal, setShowHideModal] = useState(false);
+  const [hideTargetAccount, setHideTargetAccount] = useState<Account | null>(null);
+  const [hideLoading, setHideLoading] = useState(false);
+
+  // Hide/unhide handler
+  const handleHideAccount = async (account: Account, hide: boolean) => {
+    if (!session?.access_token) return;
+    setHideLoading(true);
+    try {
+      await hideAccountApi(account.sf_account_id, hide, session.access_token);
+      toast({
+        title: hide ? 'Account hidden' : 'Account unhidden',
+        status: 'success',
+        duration: 3000,
+      });
+      setShowHideModal(false);
+      setHideTargetAccount(null);
+      refetch();
+    } catch (err: any) {
+      toast({
+        title: 'Error',
+        description: err.message,
+        status: 'error',
+        duration: 5000,
+      });
+    } finally {
+      setHideLoading(false);
+    }
   };
 
   if (isLoading) return <Spinner />
@@ -1012,6 +1090,37 @@ const Accounts = () => {
 
       <AddAccountModal />
       <AccountDetailModal />
+
+      {/* Hide/Unhide confirmation modal */}
+      <Modal isOpen={showHideModal} onClose={() => setShowHideModal(false)}>
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>{hideTargetAccount?.hidden ? 'Unhide Account?' : 'Hide Account?'}</ModalHeader>
+          <ModalBody>
+            {hideTargetAccount?.hidden
+              ? 'Unhiding this account will return it to your main list.'
+              : "Hiding this account will remove it from your main list. You can always unhide it later at the bottom of this page."}
+          </ModalBody>
+          <ModalFooter>
+            <Button colorScheme={hideTargetAccount?.hidden ? 'green' : 'red'} onClick={() => hideTargetAccount && handleHideAccount(hideTargetAccount, !hideTargetAccount.hidden)} isLoading={hideLoading}>
+              {hideTargetAccount?.hidden ? 'Unhide' : 'Hide'}
+            </Button>
+            <Button ml={3} onClick={() => setShowHideModal(false)}>Cancel</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* At the bottom of the table/page, add the toggle button */}
+      <Box mt={8} textAlign="center">
+        <Button
+          onClick={() => setShowHidden(v => !v)}
+          colorScheme="gray"
+          variant="outline"
+          size="sm"
+        >
+          {showHidden ? 'Hide Hidden Accounts' : `Show Hidden Accounts (${accounts.filter(acc => acc.hidden).length})`}
+        </Button>
+      </Box>
     </Box>
   )
 }

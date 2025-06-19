@@ -103,7 +103,8 @@ def upsert_user_accounts(user_id: str, accounts: List[dict], source: str = "simp
             "sf_name": acc.get("org", {}).get("name") if acc.get("org") else acc.get("sf_name"),
             "balance": acc.get("balance") or acc.get("sf_balance") or acc.get("balance"),
             "sf_balance_date": acc.get("balance-date") or acc.get("sf_balance_date"),
-            "source": source
+            "source": source,
+            "hidden": acc.get("hidden", False)
         })
     # Upsert into user_accounts
     try:
@@ -118,7 +119,8 @@ def upsert_user_accounts(user_id: str, accounts: List[dict], source: str = "simp
 def get_user_accounts(
     user_id: str = Query(None),
     secret: str = Header(None),
-    authorization: str = Header(None)
+    authorization: str = Header(None),
+    show_hidden: bool = Query(False)
 ):
     # Auth logic (reuse from get_accounts)
     # logging.info(f"Authorization header: {authorization}")
@@ -136,8 +138,11 @@ def get_user_accounts(
     else:
         raise HTTPException(status_code=401, detail="Missing or invalid API key or JWT")
 
-    # Always return all accounts from user_accounts
-    resp = get_table("om_user_accounts").select("sf_account_id, sf_account_name, sf_name, balance, sf_balance_date, category, display_name, source").eq("user_id", user_id).execute()
+    # Always return all accounts from user_accounts, but filter hidden unless show_hidden is True
+    query = get_table("om_user_accounts").select("sf_account_id, sf_account_name, sf_name, balance, sf_balance_date, category, display_name, source, hidden").eq("user_id", user_id)
+    if not show_hidden:
+        query = query.or_("hidden.is.null,hidden.eq.false")
+    resp = query.execute()
     if resp.data and len(resp.data) > 0:
         return {"accounts": resp.data}
 
@@ -155,7 +160,10 @@ def get_user_accounts(
         accounts = resp_sf.json().get("accounts", [])
         upsert_user_accounts(user_id, accounts, source="simplefin-bridge")
         # Return the upserted data
-        resp = get_table("om_user_accounts").select("sf_account_id, sf_account_name, sf_name, balance, sf_balance_date, category, display_name,source").eq("user_id", user_id).execute()
+        query = get_table("om_user_accounts").select("sf_account_id, sf_account_name, sf_name, balance, sf_balance_date, category, display_name,source, hidden").eq("user_id", user_id)
+        if not show_hidden:
+            query = query.or_("hidden.is.null,hidden.eq.false")
+        resp = query.execute()
         return {"accounts": resp.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -182,6 +190,33 @@ def add_manual_account(
     # Upsert manual account
     upsert_user_accounts(user_id, [account], source="manual")
     return {"status": "success"}
+
+@app.patch("/api/v1/user_accounts/{account_id}/hide")
+def hide_account(
+    account_id: str,
+    hidden: bool = Query(...),
+    user_id: str = Query(None),
+    secret: str = Header(None),
+    authorization: str = Header(None)
+):
+    # Auth logic (reuse from get_accounts)
+    if secret == API_KEY:
+        if not user_id:
+            raise HTTPException(status_code=400, detail="user_id is required with API key")
+    elif authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ", 1)[1]
+        user_id_from_jwt = verify_jwt(token)
+        if not user_id_from_jwt:
+            raise HTTPException(status_code=401, detail="Invalid JWT token")
+        user_id = user_id_from_jwt
+    else:
+        raise HTTPException(status_code=401, detail="Missing or invalid API key or JWT")
+    # Only allow update for this user's account
+    resp = get_table("om_user_accounts").update({"hidden": hidden}).eq("sf_account_id", account_id).eq("user_id", user_id).execute()
+    if resp.data is not None:
+        return {"status": "success", "hidden": hidden}
+    else:
+        raise HTTPException(status_code=404, detail="Account not found or not updated")
 
 # Import and include sync router
 try:
