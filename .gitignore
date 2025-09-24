@@ -12,7 +12,8 @@ ENV/
 dist/
 build/
 *.egg-info/
-
+migration-venv/
+migration_venv
 # Node/Frontend
 frontend/node_modules/
 frontend/.pnp
@@ -49,3 +50,4 @@ yarn-error.log*
 #assets
 *.png
 *.ico
+*.json
